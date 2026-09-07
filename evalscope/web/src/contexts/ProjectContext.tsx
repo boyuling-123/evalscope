@@ -105,3 +105,8 @@ export function useProjects(): ProjectContextValue {
   if (!context) throw new Error('useProjects must be used within ProjectProvider')
   return context
 }
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOptionalProjects(): ProjectContextValue | null {
+  return useContext(ProjectContext)
+}

@@ -95,7 +95,7 @@ export default function PerfReportDetailPage() {
   const { rootPath: ctxRoot } = useScan()
 
   const path = get('path') ?? ''
-  const rootPath = get('root_path') ?? ctxRoot
+  const rootPath = projectId ? ctxRoot : (get('root_path') ?? ctxRoot)
 
   const detail = useAsyncResource(
     (signal) => getPerfDetail(rootPath, path, signal),

@@ -18,11 +18,11 @@ from evalscope.service.api_models import (
 )
 from evalscope.utils.logger import get_logger
 
+from ..project_scope import ProjectScopeError, resolve_runs_root
 from ..responses import json_response
 from ..utils import (
     DEFAULT_MULTIMODAL_BENCHMARKS,
     DEFAULT_TEXT_BENCHMARKS,
-    OUTPUT_DIR,
     TaskStoppedError,
     build_benchmark_entry,
     create_log_file,
@@ -32,6 +32,7 @@ from ..utils import (
     run_in_subprocess,
     serialize_result,
     stop_process,
+    task_process_key,
     validate_task_id,
 )
 
@@ -95,16 +96,24 @@ def _handle_validation_error(exc: RequestValidationError):
     return jsonify({'error': exc.message}), exc.status_code
 
 
-def _parse_request() -> tuple[dict, str]:
-    """Validate the request body and return (data, task_id).
+@bp_eval.errorhandler(ProjectScopeError)
+def _handle_project_scope_error(exc: ProjectScopeError):
+    return jsonify({'error': exc.message}), exc.status_code
+
+
+def _parse_request() -> tuple[dict, str, str | None]:
+    """Validate the request body and return (data, task_id, project_id).
 
     Raises:
         RequestValidationError: when the request is missing required fields or
             the ``EvalScope-Task-Id`` header is absent or malformed.
     """
-    data = request.get_json()
+    raw_data = request.get_json()
+    data = dict(raw_data) if isinstance(raw_data, dict) else None
     if not data:
         raise RequestValidationError('Request body is required')
+
+    project_id = data.pop('project_id', None)
 
     for field in _REQUIRED_FIELDS:
         if field not in data:
@@ -119,7 +128,7 @@ def _parse_request() -> tuple[dict, str]:
     except ValueError as e:
         raise RequestValidationError(str(e)) from e
 
-    return data, task_id
+    return data, task_id, project_id
 
 
 def _build_task_config(data: dict) -> TaskConfig:
@@ -154,11 +163,20 @@ def _all_results_empty(result) -> bool:
     return False
 
 
-def _execute_task(task_id: str, task_config: TaskConfig, label: str = 'Task'):
+def _execute_task(
+    task_id: str,
+    task_config: TaskConfig,
+    label: str = 'Task',
+    process_key: str | None = None,
+):
     """Run the evaluation subprocess and return a Flask response."""
-    create_log_file(task_id, os.path.join('logs', 'eval_log.log'))
+    create_log_file(
+        task_id,
+        os.path.join('logs', 'eval_log.log'),
+        root_path=os.path.dirname(task_config.work_dir),
+    )
     try:
-        result = run_in_subprocess(run_eval_wrapper, task_config, task_id=task_id)
+        result = run_in_subprocess(run_eval_wrapper, task_config, task_id=process_key or task_id)
         table_str = _build_result_table(task_config.work_dir)
         if _all_results_empty(result):
             error_msg = (
@@ -187,15 +205,20 @@ def run_evaluation():
 
     Returns the evaluation result when the task completes.
     """
-    data, task_id = _parse_request()
+    data, task_id, project_id = _parse_request()
 
     task_config = _build_task_config(data)
-    task_config.work_dir = os.path.join(OUTPUT_DIR, task_id)
+    task_config.work_dir = os.path.join(resolve_runs_root(project_id, create=True), task_id)
 
     logger.info(f'[{task_id}] Running evaluation task for model: {task_config.model}')
     logger.info(f'[{task_id}] Datasets: {task_config.datasets}')
 
-    return _execute_task(task_id, task_config, label='Task')
+    return _execute_task(
+        task_id,
+        task_config,
+        label='Task',
+        process_key=task_process_key(task_id, project_id),
+    )
 
 
 @bp_eval.route('/stop', methods=['POST'])
@@ -208,8 +231,18 @@ def stop_evaluation():
     task_id = request.args.get('task_id')
     if not task_id:
         return jsonify({'error': 'task_id is required'}), 400
+    try:
+        validate_task_id(task_id)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
-    stopped = stop_process(task_id)
+    project_id = request.args.get('project_id')
+    if project_id:
+        task_dir = os.path.join(resolve_runs_root(project_id), task_id)
+        if not os.path.isdir(task_dir):
+            return jsonify({'error': f'Task not found in project: {task_id}'}), 404
+
+    stopped = stop_process(task_process_key(task_id, project_id))
     if stopped:
         return json_response(TaskStatusResponse, {'status': 'stopped', 'task_id': task_id})
     else:
@@ -222,9 +255,9 @@ def resume_evaluation():
 
     Returns the evaluation result when the task completes.
     """
-    data, task_id = _parse_request()
+    data, task_id, project_id = _parse_request()
 
-    work_dir = os.path.join(OUTPUT_DIR, task_id)
+    work_dir = os.path.join(resolve_runs_root(project_id), task_id)
     if not os.path.isdir(work_dir):
         return jsonify({'error': f'Output directory not found for task_id: {task_id}'}), 404
 
@@ -236,7 +269,12 @@ def resume_evaluation():
     logger.info(f'[{task_id}] Running resume task, work_dir: {work_dir}')
     logger.info(f'[{task_id}] Model: {task_config.model}, Datasets: {task_config.datasets}')
 
-    return _execute_task(task_id, task_config, label='Resume task')
+    return _execute_task(
+        task_id,
+        task_config,
+        label='Resume task',
+        process_key=task_process_key(task_id, project_id),
+    )
 
 
 @bp_eval.route('/progress', methods=['GET'])
@@ -250,7 +288,12 @@ def get_evaluation_progress():
     if not task_id:
         return jsonify({'error': 'task_id is required'}), 400
 
-    progress_file = os.path.join(OUTPUT_DIR, task_id, 'progress.json')
+    try:
+        validate_task_id(task_id)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    progress_file = os.path.join(resolve_runs_root(request.args.get('project_id')), task_id, 'progress.json')
     try:
         with open(progress_file, 'r', encoding='utf-8') as f:
             progress = json.load(f)
@@ -278,7 +321,12 @@ def get_evaluation_report():
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 
-    report_file = os.path.join(OUTPUT_DIR, task_id, 'reports', 'report.html')
+    report_file = os.path.join(
+        resolve_runs_root(request.args.get('project_id')),
+        task_id,
+        'reports',
+        'report.html',
+    )
     if not os.path.exists(report_file):
         return jsonify({'error': f'Report not found for task_id: {task_id}'}), 404
 
@@ -305,7 +353,13 @@ def get_evaluation_log():
     page = request.args.get('page', 500, type=int)
 
     try:
-        result = get_log_content(task_id, os.path.join('logs', 'eval_log.log'), start_line, page)
+        result = get_log_content(
+            task_id,
+            os.path.join('logs', 'eval_log.log'),
+            start_line,
+            page,
+            root_path=resolve_runs_root(request.args.get('project_id')),
+        )
         return json_response(LogResponse, result)
     except Exception as e:
         logger.error(f'Failed to get evaluation log: {str(e)}')

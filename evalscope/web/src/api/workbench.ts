@@ -12,6 +12,7 @@ export interface ProjectRecord {
   updated_at: string
   archived: boolean
   root_path: string
+  runs_path: string
 }
 
 interface ActionErrorDetail {

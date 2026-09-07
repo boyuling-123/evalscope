@@ -3,6 +3,15 @@ import type { EvalInvokeResponse, LogResponse, ProgressResponse, TaskStatusRespo
 
 type TaskScope = 'eval' | 'perf'
 
+export interface TaskRequestOptions {
+  projectId?: string
+  signal?: AbortSignal
+}
+
+function projectParams(taskId: string, projectId?: string): Record<string, string> {
+  return projectId ? { task_id: taskId, project_id: projectId } : { task_id: taskId }
+}
+
 export function createTaskApi(scope: TaskScope) {
   const basePath = `/api/v1/${scope}`
 
@@ -10,18 +19,19 @@ export function createTaskApi(scope: TaskScope) {
     submit(
       payload: Record<string, unknown>,
       taskId: string,
-      signal?: AbortSignal,
+      options: TaskRequestOptions = {},
     ): Promise<EvalInvokeResponse> {
-      return apiPostValidated<EvalInvokeResponse>(`${basePath}/invoke`, payload, {
+      const body = options.projectId ? { ...payload, project_id: options.projectId } : payload
+      return apiPostValidated<EvalInvokeResponse>(`${basePath}/invoke`, body, {
         headers: { 'EvalScope-Task-Id': taskId },
-        signal,
+        signal: options.signal,
       })
     },
 
-    progress(taskId: string, signal?: AbortSignal): Promise<ProgressResponse> {
+    progress(taskId: string, options: TaskRequestOptions = {}): Promise<ProgressResponse> {
       return apiValidated<ProgressResponse>(`${basePath}/progress`, {
-        params: { task_id: taskId },
-        signal,
+        params: projectParams(taskId, options.projectId),
+        signal: options.signal,
       })
     },
 
@@ -29,22 +39,29 @@ export function createTaskApi(scope: TaskScope) {
       taskId: string,
       startLine?: number,
       page = 500,
-      signal?: AbortSignal,
+      options: TaskRequestOptions = {},
     ): Promise<LogResponse> {
-      const params: Record<string, string> = { task_id: taskId, page: String(page) }
+      const params: Record<string, string> = {
+        ...projectParams(taskId, options.projectId),
+        page: String(page),
+      }
       if (startLine !== undefined) params.start_line = String(startLine)
-      return apiValidated<LogResponse>(`${basePath}/log`, { params, signal })
+      return apiValidated<LogResponse>(`${basePath}/log`, { params, signal: options.signal })
     },
 
-    reportUrl(taskId: string): string {
-      return `${basePath}/report?task_id=${encodeURIComponent(taskId)}`
+    reportUrl(taskId: string, options: TaskRequestOptions = {}): string {
+      const taskParam = `task_id=${encodeURIComponent(taskId)}`
+      const projectParam = options.projectId
+        ? `&project_id=${encodeURIComponent(options.projectId)}`
+        : ''
+      return `${basePath}/report?${taskParam}${projectParam}`
     },
 
-    stop(taskId: string, signal?: AbortSignal): Promise<TaskStatusResponse> {
+    stop(taskId: string, options: TaskRequestOptions = {}): Promise<TaskStatusResponse> {
       return apiPostValidated<TaskStatusResponse>(
         `${basePath}/stop`,
         {},
-        { params: { task_id: taskId }, signal },
+        { params: projectParams(taskId, options.projectId), signal: options.signal },
       )
     },
   }

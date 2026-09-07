@@ -96,11 +96,11 @@ async function renderDashboard(): Promise<void> {
   render(
     <LocaleProvider>
       <ThemeProvider>
-        <ReportsProvider>
-          <MemoryRouter initialEntries={['/dashboard']}>
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <ReportsProvider>
             <DashboardPage />
-          </MemoryRouter>
-        </ReportsProvider>
+          </ReportsProvider>
+        </MemoryRouter>
       </ThemeProvider>
     </LocaleProvider>,
   )

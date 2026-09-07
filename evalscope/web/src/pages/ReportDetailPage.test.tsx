@@ -34,13 +34,13 @@ async function settle(): Promise<void> {
 async function renderDetail(): Promise<void> {
   render(
     <LocaleProvider>
-      <ReportsProvider>
-        <MemoryRouter initialEntries={['/reports/20260810_112700/test-model-a']}>
+      <MemoryRouter initialEntries={['/reports/20260810_112700/test-model-a']}>
+        <ReportsProvider>
           <Routes>
             <Route path="/reports/:runId/:modelId" element={<ReportDetailPage />} />
           </Routes>
-        </MemoryRouter>
-      </ReportsProvider>
+        </ReportsProvider>
+      </MemoryRouter>
     </LocaleProvider>,
   )
   await settle()

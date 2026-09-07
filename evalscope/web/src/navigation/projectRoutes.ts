@@ -26,3 +26,14 @@ export function projectRouteFromPathname(pathname: string, projectId: string): s
   const match = pathname.match(/^\/project\/[^/]+(\/.*)?$/)
   return projectRoute(projectId, match?.[1] || '/dashboard')
 }
+
+export function projectIdFromPathname(pathname: string): string | undefined {
+  const match = pathname.match(/^\/project\/([^/]+)(?:\/|$)/)
+  let candidate: string | undefined
+  try {
+    candidate = match ? decodeURIComponent(match[1]) : undefined
+  } catch {
+    return undefined
+  }
+  return isProjectId(candidate) ? candidate : undefined
+}

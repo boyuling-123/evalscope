@@ -18,6 +18,7 @@ import OverviewTab from '@/components/reports/OverviewTab'
 import DetailsTab from '@/components/reports/DetailsTab'
 import PredictionsTab from '@/components/reports/PredictionsTab'
 import { projectRouteOr } from '@/navigation/projectRoutes'
+import { useScan } from '@/contexts/ReportsContext'
 
 type TabKey = 'overview' | 'details' | 'predictions'
 
@@ -25,8 +26,9 @@ export default function ReportDetailPage() {
   const { projectId, runId, modelId } = useParams<{ projectId: string; runId: string; modelId: string }>()
   const [searchParams] = useSearchParams()
   const { t } = useLocale()
+  const { rootPath: projectRootPath } = useScan()
 
-  const rootPath = searchParams.get('root_path') || './outputs'
+  const rootPath = projectId ? projectRootPath : (searchParams.get('root_path') || './outputs')
   const reportName = useMemo(
     () => formatReportRef({ runId: runId ?? '', modelId: modelId ?? '' }),
     [runId, modelId],

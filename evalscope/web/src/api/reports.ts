@@ -8,6 +8,7 @@ import type {
   PredictionsResponse,
 } from './types'
 import { parseReportRef } from '@/domain/report/reportRef'
+import { scopedRootParams } from './projectScope'
 
 const BASE = '/api/v1/reports'
 
@@ -31,7 +32,7 @@ export async function listReports(params: {
 }): Promise<ListReportsResponse> {
   return apiValidated<ListReportsResponse>(BASE, {
     params: {
-      root_path: params.rootPath,
+      ...scopedRootParams(params.rootPath),
       search: params.search,
       models: params.models?.join(';'),
       datasets: params.datasets?.join(';'),
@@ -50,7 +51,7 @@ export async function deleteReport(
   signal?: AbortSignal,
 ): Promise<DeleteReportResponse> {
   return apiDeleteValidated<DeleteReportResponse>(reportPath(ref), {
-    params: { root_path: rootPath },
+    params: scopedRootParams(rootPath),
     signal,
   })
 }
@@ -61,7 +62,7 @@ export async function loadReport(
   signal?: AbortSignal,
 ): Promise<LoadReportResponse> {
   return apiValidated<LoadReportResponse>(reportPath(ref), {
-    params: { root_path: rootPath },
+    params: scopedRootParams(rootPath),
     signal,
   })
 }
@@ -75,7 +76,7 @@ export async function getDataFrame(
 ): Promise<DataFrameResponse> {
   return apiValidated<DataFrameResponse>(`${reportPath(ref)}/table`, {
     params: {
-      root_path: rootPath,
+      ...scopedRootParams(rootPath),
       view,
       dataset_name: datasetName,
     },
@@ -92,7 +93,7 @@ export async function getPredictions(
 ): Promise<PredictionsResponse> {
   return apiValidated<PredictionsResponse>(`${reportPath(ref)}/predictions`, {
     params: {
-      root_path: rootPath,
+      ...scopedRootParams(rootPath),
       dataset_name: datasetName,
       subset_name: subsetName,
     },
@@ -108,7 +109,7 @@ export async function getAnalysis(
 ): Promise<string> {
   const res = await apiValidated<AnalysisResponse>(`${reportPath(ref)}/analysis`, {
     params: {
-      root_path: rootPath,
+      ...scopedRootParams(rootPath),
       dataset_name: datasetName,
     },
     signal,
@@ -118,7 +119,8 @@ export async function getAnalysis(
 
 export function getHtmlReportUrl(rootPath: string, ref: string): string {
   const { runId } = parseReportRef(ref)
-  return `${BASE}/runs/${encodeURIComponent(runId)}/html?root_path=${encodeURIComponent(rootPath)}`
+  const params = new URLSearchParams(scopedRootParams(rootPath))
+  return `${BASE}/runs/${encodeURIComponent(runId)}/html?${params.toString()}`
 }
 
 /** URL of a multi-report comparison chart (`radar` | `grouped_bar`), one `report=` per reference. */
@@ -127,7 +129,7 @@ export function getCompareChartUrl(
   refs: string[],
   chartType: 'radar' | 'grouped_bar',
 ): string {
-  const params = new URLSearchParams({ root_path: rootPath })
+  const params = new URLSearchParams(scopedRootParams(rootPath))
   for (const ref of refs) params.append('report', ref)
   return `${BASE}/charts/${chartType}?${params.toString()}`
 }

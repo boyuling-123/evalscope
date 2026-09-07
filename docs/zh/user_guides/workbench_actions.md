@@ -41,4 +41,10 @@ POST /api/v1/workbench/actions/execute
 evalscope service --outputs ./outputs --workspace ./my-workbench
 ```
 
-项目清单保存在 `projects/<project_id>/project.json`。Action 审计保存在 `audit/events.jsonl`，幂等结果保存在 `.action-state/idempotency/`。这些文件使用开放 JSON／JSONL 格式；浏览器不保存大规模业务真值。
+项目清单保存在 `projects/<project_id>/project.json`，项目运行产物保存在 `projects/<project_id>/runs/`。Action 审计保存在 `audit/events.jsonl`，幂等结果保存在 `.action-state/idempotency/`。这些文件使用开放 JSON／JSONL 格式；浏览器不保存大规模业务真值。
+
+## 项目级运行隔离
+
+项目页面发起质量评测或性能压测时，会在任务生命周期请求中携带稳定的 `project_id`。服务端从项目清单解析真实 `runs_path`，不会信任调用方传入的项目目录；进度、日志、报告和历史列表因此始终落在同一个项目边界内。运行中进程采用项目限定键登记，即使不同项目使用同一个任务 ID，停止和删除保护也不会串线。
+
+不携带 `project_id` 的原 EvalScope 请求仍使用服务启动时配置的输出目录，以保持现有 CLI 和旧页面兼容。外部 API、MCP 或评测助手接入项目工作台时，应优先传递 `project_id`，而不是自行拼接 `root_path`。

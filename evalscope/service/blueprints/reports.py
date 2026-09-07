@@ -60,14 +60,21 @@ from evalscope.utils.data_utils import (
 from evalscope.utils.io_utils import OutputsStructure
 from evalscope.utils.logger import get_logger
 
+from ..project_scope import ProjectScopeError, resolve_runs_root
 from ..responses import json_response
-from ..utils import OUTPUT_DIR, active_task_ids
+from ..utils import OUTPUT_DIR, active_task_ids, task_process_key
 
 logger = get_logger()
 
 bp_reports = Blueprint('reports', __name__, url_prefix='/api/v1/reports')
 
 _DEFAULT_ROOT = OUTPUT_DIR
+
+
+@bp_reports.errorhandler(ProjectScopeError)
+def _handle_project_scope_error(exc: ProjectScopeError):
+    return jsonify({'error': exc.message}), exc.status_code
+
 
 # Allowed extensions for the media proxy (security: do not serve arbitrary files)
 _MEDIA_EXTENSIONS = {
@@ -135,7 +142,11 @@ def serve_media_file() -> ResponseReturnValue:
 
 
 def _root_path() -> str:
-    # Priority: URL query param > app config (from --outputs CLI arg) > default
+    project_id = request.args.get('project_id')
+    if project_id:
+        return resolve_runs_root(project_id, create=True)
+
+    # Preserve the legacy API when no project scope was requested.
     from flask import current_app
 
     return request.args.get('root_path', current_app.config.get('OUTPUTS_ROOT') or _DEFAULT_ROOT)
@@ -435,7 +446,7 @@ def delete_report(run_id: str, model_id: str) -> ResponseReturnValue:
 
     # Running-task protection: in the service layout the run directory is the
     # task_id itself, so refuse deletion while that task is still active.
-    if ref.run_id in active_task_ids():
+    if task_process_key(ref.run_id, request.args.get('project_id')) in active_task_ids():
         return jsonify({'error': f'Task is still running: {ref.run_id}'}), 409
 
     root_real = os.path.realpath(_root_path())
