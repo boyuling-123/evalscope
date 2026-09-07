@@ -27,14 +27,23 @@
 | --- | --- | --- | --- |
 | 统一 Action Registry | 已验证 | `evalscope/workbench` 与 Action 契约测试 | 所有后续写操作复用 |
 | 项目查询、预览与确认创建 | 已验证 | `project.list/get/create`；浏览器完成真实创建 | 增加归档与导入导出 |
-| 项目级路由与切换 | 已验证 | `/project/:projectId/*`；桌面与 390px 验收 | 将业务数据真正按项目隔离 |
+| 项目级路由与切换 | 已验证 | `/project/:projectId/*`；桌面与 390px 验收 | 后续对象页复用同一路由约束 |
 | 中文紧凑页面壳层 | 已验证 | 左侧导航、路径栏、唯一 H1、主动作 | 后续页面复用同一壳层 |
-| 质量评测与性能压测入口 | 部分实现 | 复用 EvalScope 现有任务和报告页 | 统一为 project-scoped Run |
+| 项目级运行数据隔离 | 已验证 | 项目独立 `runs_path`；任务、进度、日志与报告按 `project_id` 解析 | Target、Dataset 与 Evaluator 延续相同边界 |
+| 质量评测与性能压测入口 | 部分实现 | 现有任务和报告页已绑定项目运行目录 | 收敛为统一 Run Spec 与运行详情 |
 | 评测对象 | 未实现 | 无稳定 Target 对象和版本 | P0 新建 Action 与页面 |
 | 数据集版本 | 未实现 | 仅有运行时数据集配置 | P0 新建不可变版本对象 |
 | 评估器版本 | 未实现 | EvalScope Evaluator 可执行，但无产品生命周期 | P0 新建 Action 与页面 |
 | Trace 管理 | 部分实现 | EvalScope 有 Agent Trace 组件 | P1 建立外部 Trace 关联和列表 |
 | MCP 与评测助手 | 设计中 | Action 已提供共同能力面 | P1 在 Action 上增加适配器 |
+
+## 本轮验收纪实（2026-09-08）
+
+- 项目创建时预留独立 `runs/`，服务端只依据已登记的 `project_id` 解析目录，不接受调用方伪造项目根路径；运行中进程也使用“项目 ID + 任务 ID”登记，避免同名任务停止串线。
+- 质量评测与性能压测的创建、继续、停止、进度、日志、报告和历史列表均传递项目上下文；不传 `project_id` 时保持原 EvalScope 调用兼容。
+- 使用两个本地项目和同名任务交叉验收：即使请求携带对方项目的 `root_path`，项目 A 仍返回 `21% / PROJECT_A_ONLY`，项目 B 返回 `84% / PROJECT_B_ONLY`。
+- 浏览器验收确认项目切换会同步更新 URL、面包屑、导航链接、只读运行目录及网络请求；1440px 桌面与 390px 窄屏均无主内容横向溢出。
+- 本轮没有调用付费模型，也没有自动启动 AI 评价。
 
 ## 已锁定的前端取舍
 
@@ -47,8 +56,8 @@
 
 ## 连续开发顺序
 
-1. 将评测与性能任务的创建、进度、日志和报告按 `project_id` 隔离，并让项目目录成为默认输出根。
-2. 建立 Target Action 与列表／详情／接入流程，先覆盖 HTTP API 和已有 EvalScope 模型配置。
+1. 已完成：将评测与性能任务的创建、进度、日志和报告按 `project_id` 隔离，并让项目目录成为默认输出根。
+2. 当前 Ready：建立 Target Action 与列表／详情／接入流程，先覆盖 HTTP API 和已有 EvalScope 模型配置。
 3. 建立不可变 DatasetVersion 与字段映射预览，复用既有导入 Skill 的确认规则。
 4. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
 5. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。

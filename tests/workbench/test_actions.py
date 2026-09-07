@@ -90,6 +90,8 @@ def test_project_create_replays_same_operation_and_rejects_changed_payload(tmp_p
     project = created.result.data['project']
     assert project['id'].startswith('prj_')
     assert (tmp_path / 'projects' / project['id'] / 'project.json').is_file()
+    assert (tmp_path / 'projects' / project['id'] / 'runs').is_dir()
+    assert project['runs_path'].endswith('/runs')
     assert replayed.ok
     assert replayed.result.data['project']['id'] == project['id']
     assert '重复提交' in replayed.warnings[0]

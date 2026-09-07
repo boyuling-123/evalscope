@@ -128,8 +128,8 @@ function renderPage(entries: string[]) {
   return render(
     <ThemeProvider>
       <LocaleProvider>
-        <ReportsProvider>
-          <MemoryRouter initialEntries={entries}>
+        <MemoryRouter initialEntries={entries}>
+          <ReportsProvider>
             <Routes>
               <Route
                 path="*"
@@ -141,8 +141,8 @@ function renderPage(entries: string[]) {
                 }
               />
             </Routes>
-          </MemoryRouter>
-        </ReportsProvider>
+          </ReportsProvider>
+        </MemoryRouter>
       </LocaleProvider>
     </ThemeProvider>,
   )

@@ -3,10 +3,12 @@ import { useQueryParams } from '@/hooks/useQueryParams'
 import EvalConfigForm from '@/components/eval/EvalConfigForm'
 import TaskRunnerShell from '@/components/tasks/TaskRunnerShell'
 import { submitEvalTask, stopEvalTask, getEvalProgress, getEvalLog, getEvalReportUrl } from '@/api/eval'
+import { useParams } from 'react-router-dom'
 
 export default function EvalTaskPanel() {
   const { t } = useLocale()
   const queryParams = useQueryParams()
+  const { projectId } = useParams()
   const initialDataset = queryParams.get('dataset')
   // Lets the dashboard hand over a past run's model and datasets so it can be repeated. Secrets are
   // never carried this way -- the API key stays a field the user fills in.
@@ -15,6 +17,7 @@ export default function EvalTaskPanel() {
   return (
     <TaskRunnerShell
       idPrefix="eval"
+      projectId={projectId}
       title={t('eval.title')}
       configTitle={t('eval.config')}
       statusTitle={t('eval.status')}

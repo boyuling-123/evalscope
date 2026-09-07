@@ -64,11 +64,11 @@ async function settle(): Promise<void> {
 async function renderReports(): Promise<void> {
   render(
     <LocaleProvider>
-      <ReportsProvider>
-        <MemoryRouter initialEntries={['/reports']}>
+      <MemoryRouter initialEntries={['/reports']}>
+        <ReportsProvider>
           <ReportsPage />
-        </MemoryRouter>
-      </ReportsProvider>
+        </ReportsProvider>
+      </MemoryRouter>
     </LocaleProvider>,
   )
   await settle()

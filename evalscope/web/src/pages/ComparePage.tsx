@@ -54,7 +54,7 @@ export default function ComparePage() {
 
   // Score comparison consumes the complete URL selection. Prediction comparison
   // derives its own bounded subset below.
-  const rootPath = qp.get('root_path') || ctxRootPath
+  const rootPath = projectId ? ctxRootPath : (qp.get('root_path') || ctxRootPath)
   // Key the memo on a stable string: `useQueryParams` returns a fresh object each render, so a raw
   // `[qp]` dependency would rebuild the array every render and re-fire the load effect in a loop.
   const reportKey = qp.getList('report').filter(Boolean).join(';')

@@ -48,4 +48,40 @@ describe.each(['eval', 'perf'] as const)('createTaskApi(%s)', (scope) => {
     )
     expect(api.reportUrl('task 1')).toBe(`/api/v1/${scope}/report?task_id=task%201`)
   })
+
+  it('keeps every task lifecycle request inside an explicit project', async () => {
+    const api = createTaskApi(scope)
+    const options = { projectId: 'prj_0123456789abcdefabcd' }
+
+    await api.submit({ model: 'qwen-plus' }, 'task-2', options)
+    await api.progress('task-2', options)
+    await api.log('task-2', 0, 50, options)
+    await api.stop('task-2', options)
+
+    expect(post).toHaveBeenNthCalledWith(
+      1,
+      `/api/v1/${scope}/invoke`,
+      { model: 'qwen-plus', project_id: options.projectId },
+      expect.objectContaining({ headers: { 'EvalScope-Task-Id': 'task-2' } }),
+    )
+    expect(get).toHaveBeenNthCalledWith(
+      1,
+      `/api/v1/${scope}/progress`,
+      expect.objectContaining({ params: { task_id: 'task-2', project_id: options.projectId } }),
+    )
+    expect(get).toHaveBeenNthCalledWith(
+      2,
+      `/api/v1/${scope}/log`,
+      expect.objectContaining({
+        params: { task_id: 'task-2', project_id: options.projectId, start_line: '0', page: '50' },
+      }),
+    )
+    expect(post).toHaveBeenNthCalledWith(
+      2,
+      `/api/v1/${scope}/stop`,
+      {},
+      expect.objectContaining({ params: { task_id: 'task-2', project_id: options.projectId } }),
+    )
+    expect(api.reportUrl('task-2', options)).toContain(`project_id=${options.projectId}`)
+  })
 })

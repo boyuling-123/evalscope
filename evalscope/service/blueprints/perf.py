@@ -23,6 +23,7 @@ from evalscope.utils.logger import get_logger
 
 from .. import perf_archive
 from ..perf_archive import PerfArchiveError
+from ..project_scope import ProjectScopeError, resolve_runs_root
 from ..responses import json_response
 from ..utils import (
     OUTPUT_DIR,
@@ -34,6 +35,7 @@ from ..utils import (
     run_perf_wrapper,
     serialize_result,
     stop_process,
+    task_process_key,
     validate_task_id,
 )
 
@@ -41,7 +43,10 @@ logger = get_logger()
 
 
 def _root_path() -> str:
-    """Resolve the outputs root: query param > app config > OUTPUT_DIR."""
+    """Resolve a registered project first, then preserve the legacy root path."""
+    project_id = request.args.get('project_id')
+    if project_id:
+        return resolve_runs_root(project_id, create=True)
     return request.args.get('root_path', current_app.config.get('OUTPUTS_ROOT') or OUTPUT_DIR)
 
 
@@ -92,15 +97,23 @@ def _build_perf_table(result, api_type: str = None) -> str:
 bp_perf = Blueprint('perf', __name__, url_prefix='/api/v1/perf')
 
 
+@bp_perf.errorhandler(ProjectScopeError)
+def _handle_project_scope_error(exc: ProjectScopeError):
+    return jsonify({'error': exc.message}), exc.status_code
+
+
 @bp_perf.route('/invoke', methods=['POST'])
 def run_performance_test():
     """Run a performance benchmark task (blocking).
 
     Returns the benchmark result when the task completes.
     """
-    data = request.get_json()
+    raw_data = request.get_json()
+    data = dict(raw_data) if isinstance(raw_data, dict) else None
     if not data:
         return jsonify({'error': 'Request body is required'}), 400
+
+    project_id = data.pop('project_id', None)
 
     required_fields = ['model', 'url']
     for field in required_fields:
@@ -121,7 +134,8 @@ def run_performance_test():
 
     perf_args = PerfArguments.from_dict(data)
     perf_args.no_timestamp = True
-    perf_args.outputs_dir = os.path.join(OUTPUT_DIR, task_id)
+    runs_root = resolve_runs_root(project_id, create=True)
+    perf_args.outputs_dir = os.path.join(runs_root, task_id)
     perf_args.name = 'perf'
     perf_args.enable_progress_tracker = True
     perf_args.no_test_connection = True
@@ -129,10 +143,14 @@ def run_performance_test():
     logger.info(f'[{task_id}] Running performance benchmark for model: {perf_args.model}')
     logger.info(f'[{task_id}] URL: {perf_args.url}')
 
-    create_log_file(task_id, os.path.join('perf', 'benchmark.log'))
+    create_log_file(task_id, os.path.join('perf', 'benchmark.log'), root_path=runs_root)
 
     try:
-        result = run_in_subprocess(run_perf_wrapper, perf_args, task_id=task_id)
+        result = run_in_subprocess(
+            run_perf_wrapper,
+            perf_args,
+            task_id=task_process_key(task_id, project_id),
+        )
         table_str = _build_perf_table(result, api_type=perf_args.api)
         logger.info(f'[{task_id}] Task completed successfully')
         return json_response(
@@ -157,8 +175,18 @@ def stop_performance_test():
     task_id = request.args.get('task_id')
     if not task_id:
         return jsonify({'error': 'task_id is required'}), 400
+    try:
+        validate_task_id(task_id)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
-    stopped = stop_process(task_id)
+    project_id = request.args.get('project_id')
+    if project_id:
+        task_dir = os.path.join(resolve_runs_root(project_id), task_id)
+        if not os.path.isdir(task_dir):
+            return jsonify({'error': f'Task not found in project: {task_id}'}), 404
+
+    stopped = stop_process(task_process_key(task_id, project_id))
     if stopped:
         return json_response(TaskStatusResponse, {'status': 'stopped', 'task_id': task_id})
     else:
@@ -181,7 +209,12 @@ def get_performance_report():
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 
-    report_file = os.path.join(OUTPUT_DIR, task_id, 'perf', 'perf_report.html')
+    report_file = os.path.join(
+        resolve_runs_root(request.args.get('project_id')),
+        task_id,
+        'perf',
+        'perf_report.html',
+    )
     if not os.path.exists(report_file):
         return jsonify({'error': f'Report not found for task_id: {task_id}'}), 404
 
@@ -208,7 +241,13 @@ def get_performance_log():
     page = request.args.get('page', 500, type=int)
 
     try:
-        result = get_log_content(task_id, os.path.join('perf', 'benchmark.log'), start_line, page)
+        result = get_log_content(
+            task_id,
+            os.path.join('perf', 'benchmark.log'),
+            start_line,
+            page,
+            root_path=resolve_runs_root(request.args.get('project_id')),
+        )
         return json_response(LogResponse, result)
     except Exception as e:
         logger.error(f'Failed to get performance log: {str(e)}')
@@ -226,7 +265,17 @@ def get_performance_progress():
     if not task_id:
         return jsonify({'error': 'task_id is required'}), 400
 
-    progress_file = os.path.join(OUTPUT_DIR, task_id, 'perf', 'progress.json')
+    try:
+        validate_task_id(task_id)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    progress_file = os.path.join(
+        resolve_runs_root(request.args.get('project_id')),
+        task_id,
+        'perf',
+        'progress.json',
+    )
     try:
         with open(progress_file, 'r', encoding='utf-8') as f:
             progress = json.load(f)
@@ -443,7 +492,9 @@ def delete_perf_run():
     # Running-task protection: in the service layout the run path is
     # ``<task_id>/perf``, so refuse deletion while that task is still active.
     segments = set(rel_path.replace('\\', '/').strip('/').split('/'))
-    running = segments & active_task_ids()
+    project_id = request.args.get('project_id')
+    active = active_task_ids()
+    running = {task_id for task_id in segments if task_process_key(task_id, project_id) in active}
     if running:
         return jsonify({'error': f'Task is still running: {sorted(running)[0]}'}), 409
 

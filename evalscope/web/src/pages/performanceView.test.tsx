@@ -127,11 +127,11 @@ async function renderDetail(detail: PerfDetailResponse = detailFixture) {
   render(
     <LocaleProvider>
       <ThemeProvider>
-        <ReportsProvider>
-          <MemoryRouter initialEntries={[entry]}>
+        <MemoryRouter initialEntries={[entry]}>
+          <ReportsProvider>
             <PerfReportDetailPage />
-          </MemoryRouter>
-        </ReportsProvider>
+          </ReportsProvider>
+        </MemoryRouter>
       </ThemeProvider>
     </LocaleProvider>,
   )
@@ -257,12 +257,12 @@ describe('PerfRunsTab', () => {
 async function renderReports() {
   render(
     <LocaleProvider>
-      <ReportsProvider>
-        <MemoryRouter initialEntries={['/performance']}>
+      <MemoryRouter initialEntries={['/performance']}>
+        <ReportsProvider>
           <PerfReportsPage />
           <LocationProbe />
-        </MemoryRouter>
-      </ReportsProvider>
+        </ReportsProvider>
+      </MemoryRouter>
     </LocaleProvider>,
   )
   await settle()
@@ -338,12 +338,12 @@ describe('PerfReportsPage', () => {
   it('keeps the existing run visible when a refreshed response fails schema validation', async () => {
     render(
       <LocaleProvider>
-        <ReportsProvider>
-          <MemoryRouter initialEntries={['/performance']}>
+        <MemoryRouter initialEntries={['/performance']}>
+          <ReportsProvider>
             <RescanHarness />
             <PerfReportsPage />
-          </MemoryRouter>
-        </ReportsProvider>
+          </ReportsProvider>
+        </MemoryRouter>
       </LocaleProvider>,
     )
     await settle()

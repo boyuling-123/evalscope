@@ -25,6 +25,7 @@ class ProjectManifest(WorkbenchModel):
 
 class ProjectRecord(ProjectManifest):
     root_path: str
+    runs_path: str
 
 
 class ProjectCreatePayload(WorkbenchModel):
@@ -79,6 +80,7 @@ class ProjectStore:
             updated_at=now,
         )
         atomic_write_json(path, manifest.model_dump(mode='json', exclude_none=True))
+        (path.parent / 'runs').mkdir(exist_ok=True)
         return self._record(manifest, path.parent)
 
     def get(self, project_id: str) -> ProjectRecord:
@@ -119,4 +121,8 @@ class ProjectStore:
 
     @staticmethod
     def _record(manifest: ProjectManifest, root: Path) -> ProjectRecord:
-        return ProjectRecord(**manifest.model_dump(mode='json'), root_path=str(root))
+        return ProjectRecord(
+            **manifest.model_dump(mode='json'),
+            root_path=str(root),
+            runs_path=str(root / 'runs'),
+        )

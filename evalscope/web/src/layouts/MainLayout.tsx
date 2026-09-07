@@ -16,7 +16,7 @@ function showsScanPath(pathname: string): boolean {
 export default function MainLayout() {
   const location = useLocation()
   const { t } = useLocale()
-  const { rootPath, triggerScan } = useScan()
+  const { rootPath, lockedToProject, triggerScan } = useScan()
   const [visible, setVisible] = useState(true)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
@@ -67,10 +67,11 @@ export default function MainLayout() {
           {showPathBar && (
             <PathBar
               value={pathInput}
-              onChange={setPathInput}
+              onChange={lockedToProject ? () => undefined : setPathInput}
               onSubmit={() => triggerScan(pathInput.trim())}
+              readOnly={lockedToProject}
               placeholder={t('reports.pathLabel')}
-              submitLabel={t('reports.scan')}
+              submitLabel={lockedToProject ? t('common.refresh') : t('reports.scan')}
               scanningLabel={t('reports.scanning')}
             />
           )}

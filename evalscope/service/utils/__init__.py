@@ -17,6 +17,7 @@ from .process import (
     run_perf_wrapper,
     serialize_result,
     stop_process,
+    task_process_key,
 )
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     'run_perf_wrapper',
     'serialize_result',
     'stop_process',
+    'task_process_key',
     'run_in_subprocess',
     'TaskStoppedError',
     'DEFAULT_TEXT_BENCHMARKS',

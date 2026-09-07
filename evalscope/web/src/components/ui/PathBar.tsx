@@ -11,6 +11,7 @@ interface PathBarProps {
   scanningLabel?: ReactNode
   scanning?: boolean
   disabled?: boolean
+  readOnly?: boolean
   icon?: ReactNode
 }
 
@@ -27,6 +28,7 @@ export default function PathBar({
   scanningLabel,
   scanning,
   disabled,
+  readOnly,
   icon,
 }: PathBarProps) {
   return (
@@ -38,9 +40,11 @@ export default function PathBar({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && onSubmit()}
+        onKeyDown={(e) => !readOnly && e.key === 'Enter' && onSubmit()}
+        readOnly={readOnly}
+        aria-readonly={readOnly}
         placeholder={placeholder}
-        className="flex-1 min-w-0 px-3 py-2 type-body-sm rounded-[var(--radius-sm)] bg-[var(--bg-deep)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-dim)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent-dim)] transition-all duration-150"
+        className="flex-1 min-w-0 px-3 py-2 type-body-sm rounded-[var(--radius-sm)] bg-[var(--bg-deep)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-dim)] read-only:cursor-default read-only:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent-dim)] transition-all duration-150"
       />
       <Button onClick={onSubmit} disabled={disabled || scanning} size="md">
         {scanning ? (

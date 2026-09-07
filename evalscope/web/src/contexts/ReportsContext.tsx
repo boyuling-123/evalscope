@@ -8,9 +8,12 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { useLocation } from 'react-router-dom'
 import type { ConfigResponse, LoadReportResponse, ReportData } from '@/api/types'
 import * as reportsApi from '@/api/reports'
 import { apiValidated } from '@/api/client'
+import { useOptionalProjects } from '@/contexts/ProjectContext'
+import { projectIdFromPathname } from '@/navigation/projectRoutes'
 
 /**
  * Report-scoped application state, split into three independent contexts.
@@ -30,7 +33,9 @@ const REPORT_CACHE_LIMIT = 32 // bound the in-memory cache so long sessions don'
 // ------------------------------------------------------------------ //
 
 interface ScanCtx {
+  projectId?: string
   rootPath: string
+  lockedToProject: boolean
   /** Monotonically-increasing token; bumped by triggerScan to fan out a rescan. */
   scanToken: number
   setRootPath: (path: string) => void
@@ -96,7 +101,13 @@ function withCacheLimit(
 }
 
 function ScanProvider({ children }: { children: ReactNode }) {
-  const [rootPath, setRootPathState] = useState(INITIAL_ROOT)
+  const location = useLocation()
+  const projects = useOptionalProjects()?.projects ?? []
+  const projectId = projectIdFromPathname(location.pathname)
+  const project = projects.find((item) => item.id === projectId)
+  const projectRunsPath = project?.runs_path
+  const [legacyRootPath, setLegacyRootPath] = useState(INITIAL_ROOT)
+  const rootPath = projectRunsPath ?? legacyRootPath
   const [scanToken, setScanToken] = useState(0)
 
   // Mirror the latest root into a ref so the mount effect and triggerScan can
@@ -112,23 +123,32 @@ function ScanProvider({ children }: { children: ReactNode }) {
     apiValidated<ConfigResponse>('/api/v1/config')
       .then((cfg) => {
         if (!cancelled && cfg.outputs_root && rootRef.current === INITIAL_ROOT) {
-          setRootPathState(cfg.outputs_root)
+          setLegacyRootPath(cfg.outputs_root)
         }
       })
       .catch(() => {/* ignore; keep default */})
     return () => { cancelled = true }
   }, [])
 
-  const setRootPath = useCallback((path: string) => setRootPathState(path), [])
+  const setRootPath = useCallback((path: string) => {
+    if (!projectRunsPath) setLegacyRootPath(path)
+  }, [projectRunsPath])
 
   const triggerScan = useCallback((path?: string) => {
-    setRootPathState(path ?? rootRef.current)
+    if (!projectRunsPath) setLegacyRootPath(path ?? rootRef.current)
     setScanToken((token) => token + 1)
-  }, [])
+  }, [projectRunsPath])
 
   const value = useMemo<ScanCtx>(
-    () => ({ rootPath, scanToken, setRootPath, triggerScan }),
-    [rootPath, scanToken, setRootPath, triggerScan],
+    () => ({
+      projectId,
+      rootPath,
+      lockedToProject: Boolean(projectRunsPath),
+      scanToken,
+      setRootPath,
+      triggerScan,
+    }),
+    [projectId, projectRunsPath, rootPath, scanToken, setRootPath, triggerScan],
   )
 
   return <ScanContext.Provider value={value}>{children}</ScanContext.Provider>

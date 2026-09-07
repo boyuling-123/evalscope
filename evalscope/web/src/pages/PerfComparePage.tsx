@@ -90,7 +90,7 @@ export default function PerfComparePage() {
   const { get, set } = useQueryParams()
   const { rootPath: ctxRoot } = useScan()
 
-  const rootPath = get('root_path') ?? ctxRoot
+  const rootPath = projectId ? ctxRoot : (get('root_path') ?? ctxRoot)
   const paths = useMemo(
     () => (get('paths') ?? '').split(';').map((p) => p.trim()).filter(Boolean),
     [get],

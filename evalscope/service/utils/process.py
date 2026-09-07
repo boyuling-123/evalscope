@@ -33,6 +33,11 @@ _user_stopped_tasks: set[str] = set()
 """Task IDs that were explicitly stopped by the user via /stop."""
 
 
+def task_process_key(task_id: str, project_id: str | None = None) -> str:
+    """Return an opaque process-registry key without changing on-disk task IDs."""
+    return f'{project_id}:{task_id}' if project_id else task_id
+
+
 class TaskStoppedError(Exception):
     """Raised when a task is explicitly stopped by the user.
 

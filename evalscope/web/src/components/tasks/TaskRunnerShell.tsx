@@ -3,6 +3,7 @@ import type { EvalInvokeResponse, LogResponse, ProgressResponse } from '@/api/ty
 import { usePolling } from '@/hooks/usePolling'
 import Card from '@/components/ui/Card'
 import TaskMonitor from '@/components/eval/TaskMonitor'
+import type { TaskRequestOptions } from '@/api/task'
 
 interface FormRenderProps {
   onSubmit: (config: Record<string, unknown>) => Promise<void>
@@ -15,12 +16,22 @@ interface TaskRunnerShellProps {
   configTitle: string
   statusTitle: string
   readyLabel: string
+  projectId?: string
   renderForm: (props: FormRenderProps) => ReactNode
-  submitTask: (config: Record<string, unknown>, taskId: string) => Promise<EvalInvokeResponse>
-  stopTask: (taskId: string) => Promise<unknown>
-  getProgress: (taskId: string) => Promise<ProgressResponse>
-  getLog: (taskId: string, tailLine: number) => Promise<LogResponse>
-  getReportUrl: (taskId: string) => string
+  submitTask: (
+    config: Record<string, unknown>,
+    taskId: string,
+    options?: TaskRequestOptions,
+  ) => Promise<EvalInvokeResponse>
+  stopTask: (taskId: string, options?: TaskRequestOptions) => Promise<unknown>
+  getProgress: (taskId: string, options?: TaskRequestOptions) => Promise<ProgressResponse>
+  getLog: (
+    taskId: string,
+    tailLine: number,
+    page?: number,
+    options?: TaskRequestOptions,
+  ) => Promise<LogResponse>
+  getReportUrl: (taskId: string, options?: TaskRequestOptions) => string
 }
 
 function createTaskId(prefix: string): string {
@@ -33,6 +44,7 @@ export default function TaskRunnerShell({
   configTitle,
   statusTitle,
   readyLabel,
+  projectId,
   renderForm,
   submitTask,
   stopTask,
@@ -40,6 +52,7 @@ export default function TaskRunnerShell({
   getLog,
   getReportUrl,
 }: TaskRunnerShellProps) {
+  const taskOptions = useMemo(() => (projectId ? { projectId } : undefined), [projectId])
   const [taskId, setTaskId] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<EvalInvokeResponse | null>(null)
@@ -56,7 +69,9 @@ export default function TaskRunnerShell({
     setProgress(0)
     setResult(null)
     try {
-      setResult(await submitTask(config, id))
+      setResult(await (taskOptions
+        ? submitTask(config, id, taskOptions)
+        : submitTask(config, id)))
     } catch (error) {
       setResult({ status: 'error', task_id: id, error: String(error) })
     } finally {
@@ -67,7 +82,7 @@ export default function TaskRunnerShell({
   const handleStop = async () => {
     if (!taskId) return
     try {
-      await stopTask(taskId)
+      await (taskOptions ? stopTask(taskId, taskOptions) : stopTask(taskId))
     } catch {
       // The local task state still needs to stop when the backend is unavailable.
     }
@@ -77,13 +92,13 @@ export default function TaskRunnerShell({
 
   const progressFn = useCallback(async () => {
     if (!taskId) throw new Error('no task')
-    return getProgress(taskId)
-  }, [getProgress, taskId])
+    return taskOptions ? getProgress(taskId, taskOptions) : getProgress(taskId)
+  }, [getProgress, taskId, taskOptions])
 
   const logFn = useCallback(async () => {
     if (!taskId) throw new Error('no task')
-    return getLog(taskId, logLine)
-  }, [getLog, logLine, taskId])
+    return taskOptions ? getLog(taskId, logLine, 500, taskOptions) : getLog(taskId, logLine)
+  }, [getLog, logLine, taskId, taskOptions])
 
   usePolling<ProgressResponse>({
     fn: progressFn,
@@ -110,7 +125,10 @@ export default function TaskRunnerShell({
     },
   })
 
-  const reportUrl = useMemo(() => (taskId ? getReportUrl(taskId) : null), [getReportUrl, taskId])
+  const reportUrl = useMemo(
+    () => (taskId ? (taskOptions ? getReportUrl(taskId, taskOptions) : getReportUrl(taskId)) : null),
+    [getReportUrl, taskId, taskOptions],
+  )
 
   return (
     <div className="page-enter">

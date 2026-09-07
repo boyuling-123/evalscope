@@ -31,6 +31,7 @@ const PROJECT = {
   updated_at: '2026-09-08T00:00:00Z',
   archived: false,
   root_path: '/tmp/evalscope/projects/prj_0123456789abcdefabcd',
+  runs_path: '/tmp/evalscope/projects/prj_0123456789abcdefabcd/runs',
 }
 
 function renderPage() {

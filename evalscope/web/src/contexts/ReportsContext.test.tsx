@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { useEffect } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 
 import type { LoadReportResponse, ReportData } from '@/api/types'
 
@@ -67,7 +68,11 @@ describe('ReportsProvider cache scope', () => {
       return rootPath === 'old-root' ? oldResponse.promise : newResponse.promise
     })
 
-    render(<ReportsProvider><Probe /></ReportsProvider>)
+    render(
+      <MemoryRouter>
+        <ReportsProvider><Probe /></ReportsProvider>
+      </MemoryRouter>,
+    )
     await flush()
 
     act(() => controls.triggerScan('old-root'))

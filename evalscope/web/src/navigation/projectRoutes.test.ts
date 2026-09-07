@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isProjectId,
+  projectIdFromPathname,
   projectBase,
   projectRoute,
   projectRouteFromPathname,
@@ -33,5 +34,11 @@ describe('project-scoped routes', () => {
     expect(projectRouteFromPathname('/project/prj_aaaaaaaaaaaaaaaaaaaa/runs?view=quality', PROJECT_ID))
       .toBe(`/project/${PROJECT_ID}/runs?view=quality`)
     expect(projectRouteFromPathname('/projects', PROJECT_ID)).toBe(`/project/${PROJECT_ID}/dashboard`)
+  })
+
+  it('reads only canonical project ids from workbench paths', () => {
+    expect(projectIdFromPathname(`/project/${PROJECT_ID}/runs`)).toBe(PROJECT_ID)
+    expect(projectIdFromPathname('/project/prj_demo/runs')).toBeUndefined()
+    expect(projectIdFromPathname('/projects')).toBeUndefined()
   })
 })
