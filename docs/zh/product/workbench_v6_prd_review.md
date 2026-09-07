@@ -25,13 +25,13 @@
 
 | 能力 | 当前状态 | 代码或验收证据 | 下一步 |
 | --- | --- | --- | --- |
-| 统一 Action Registry | 已验证 | `evalscope/workbench` 与 7 个 Action 契约测试 | 所有后续写操作复用 |
+| 统一 Action Registry | 已验证 | `evalscope/workbench` 与 8 个 Action 契约测试 | 所有后续写操作复用 |
 | 项目查询、预览与确认创建 | 已验证 | `project.list/get/create`；浏览器完成真实创建 | 增加归档与导入导出 |
 | 项目级路由与切换 | 已验证 | `/project/:projectId/*`；桌面与 390px 验收 | 后续对象页复用同一路由约束 |
 | 中文紧凑页面壳层 | 已验证 | 左侧导航、路径栏、唯一 H1、主动作 | 后续页面复用同一壳层 |
 | 项目级运行数据隔离 | 已验证 | 项目独立 `runs_path`；任务、进度、日志与报告按 `project_id` 解析 | Target、Dataset 与 Evaluator 延续相同边界 |
 | 质量评测与性能压测入口 | 部分实现 | 现有任务和报告页已绑定项目运行目录 | 收敛为统一 Run Spec 与运行详情 |
-| 评测对象 | 部分实现 | `target.list/get/create`；`/project/:projectId/targets` 资源列表、详情与三步草稿接入 | P0 完成真实试调、后续版本与 Run 绑定 |
+| 评测对象 | 部分实现 | `target.list/get/create/connection.check`；项目级列表、详情、草稿接入与显式确认试调 | P0 增加后续不可变版本并让 Run 锁定版本 |
 | 数据集版本 | 未实现 | 仅有运行时数据集配置 | P0 新建不可变版本对象 |
 | 评估器版本 | 未实现 | EvalScope Evaluator 可执行，但无产品生命周期 | P0 新建 Action 与页面 |
 | Trace 管理 | 部分实现 | EvalScope 有 Agent Trace 组件 | P1 建立外部 Trace 关联和列表 |
@@ -63,6 +63,16 @@
 - 对象列表在桌面使用语义化表格，窄屏改为纵向卡片；详情 Tab 和三步抽屉均可使用键盘操作并保留可分享的 URL 状态。
 - 已使用真实项目在 1200px 桌面视口与 390px 移动视口完成浏览器验收：草稿对象可从接入抽屉创建并立即进入列表与详情，窄屏无横向表格溢出，全程未调用模型。
 
+### Target 真实试调基线
+
+- `target.connection.check` 必须先 `dry_run`；预览只返回目标版本、Endpoint Origin、是否配置凭据与成本风险，不解析凭据、不联网。
+- 前端在详情页中先展示预览，再提供独立的“确认并发送一次请求”操作；被阻断的适配器不会获得确认凭据。
+- 真实试调最多接受 64 KiB JSON 样例，禁止跟随重定向和使用环境代理，响应体上限为 1 MiB；输入输出路径必须符合受约束的 JSON 路径语法。
+- 服务端只在正式确认时解析 `env:` 或 macOS `keychain:` 引用，且只对已保存的精确 Endpoint 发送 Bearer 凭据；缺失凭据返回脱敏错误。
+- 试调记录只保存状态、HTTP 状态码、耗时、输出类型、输出哈希或错误代码；样例正文、完整响应与密钥均不进入记录、Action 响应或审计日志。
+- 只有真实试调通过才会将当前最新对象提升为 `ready`；试调失败则标记为 `unavailable`，不进入正式候选池。
+- 测试使用进程内 Mock 与本机临时 HTTP 服务，覆盖非法 JSON、未确认、阻断适配器、失败返回、字段映射、凭据注入、幂等重放和不落盘；没有调用付费模型。
+
 ## 已锁定的前端取舍
 
 - 未实现页面必须隐藏入口，不展示“即将上线”的空壳导航。
@@ -77,10 +87,11 @@
 1. 已完成：将评测与性能任务的创建、进度、日志和报告按 `project_id` 隔离，并让项目目录成为默认输出根。
 2. 已完成：建立项目隔离的 Target Action 与不可变首版本，先覆盖 HTTP API 和已有 EvalScope 模型配置。
 3. 已完成：实现 Langfuse 式 Target 列表、对象详情与三步草稿接入向导，未实现导入方式均明确标注为“设计中”。
-4. 当前 Ready：增加不消耗模型额度的 Mock 连接验收、真实试调 Action 与后续不可变 TargetVersion，并让 Run 锁定版本。
-5. 建立不可变 DatasetVersion 与字段映射预览，复用既有导入 Skill 的确认规则。
-6. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
-7. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。
-8. 在稳定 Action 上增加 MCP 适配器和全局评测助手，最后再进入 Prompt／Skill 优化飞轮。
+4. 已完成：增加本地 Mock 连接验收、显式双阶段确认的真实试调 Action，以及脱敏试调结果。
+5. 当前 Ready：建立后续不可变 TargetVersion，并让 Run 锁定精确版本。
+6. 建立不可变 DatasetVersion 与字段映射预览，复用既有导入 Skill 的确认规则。
+7. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
+8. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。
+9. 在稳定 Action 上增加 MCP 适配器和全局评测助手，最后再进入 Prompt／Skill 优化飞轮。
 
 每一轮都必须经过真实源文件测试、异常路径、构建、桌面和窄屏浏览器验收、文档更新、密钥扫描后，才能提交和合并。

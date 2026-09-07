@@ -4,9 +4,15 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
@@ -21,6 +27,8 @@ TargetStatus = Literal['draft', 'ready', 'unavailable', 'archived']
 ConnectionStatus = Literal['untested', 'passed', 'failed']
 TargetModality = Literal['text', 'image', 'audio', 'video']
 TargetAdapter = Literal['openai_chat_completions', 'openai_responses', 'http_json', 'evalscope_model']
+ConnectionCheckStatus = Literal['passed', 'failed']
+_FIELD_PATH_PATTERN = r'^[A-Za-z_][A-Za-z0-9_-]*(?:\[\d+\])*(?:\.[A-Za-z_][A-Za-z0-9_-]*(?:\[\d+\])*)*$'
 
 
 class TargetConnection(WorkbenchModel):
@@ -32,8 +40,8 @@ class TargetConnection(WorkbenchModel):
         pattern=r'^(env:[A-Z][A-Z0-9_]{1,127}|keychain:[A-Za-z0-9_.-]{1,64}/[A-Za-z0-9_.-]{1,64})$',
     )
     method: Literal['POST'] = 'POST'
-    input_field: str = Field(default='input', pattern=r'^[A-Za-z_][A-Za-z0-9_.\[\]-]{0,255}$')
-    output_path: str = Field(default='output', pattern=r'^[A-Za-z_][A-Za-z0-9_.\[\]-]{0,255}$')
+    input_field: str = Field(default='input', max_length=256, pattern=_FIELD_PATH_PATTERN)
+    output_path: str = Field(default='output', max_length=256, pattern=_FIELD_PATH_PATTERN)
     timeout_seconds: int = Field(default=60, ge=1, le=300)
 
     @field_validator('endpoint')
@@ -112,6 +120,7 @@ class TargetVersion(WorkbenchModel):
     runtime_binding: Optional[TargetRuntimeBinding] = None
     connection_status: ConnectionStatus = 'untested'
     last_connected_at: Optional[str] = None
+    last_connection_check_id: Optional[str] = Field(default=None, pattern=r'^tcc_[a-f0-9]{20}$')
     config_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
     created_at: str
 
@@ -194,6 +203,215 @@ class TargetGetPayload(WorkbenchModel):
     project_id: str = Field(pattern=r'^prj_[a-f0-9]{20}$')
     target_id: str = Field(pattern=r'^tgt_[a-f0-9]{20}$')
     version_id: Optional[str] = Field(default=None, pattern=r'^tgv_[a-f0-9]{20}$')
+
+
+class TargetConnectionCheckPayload(WorkbenchModel):
+    project_id: str = Field(pattern=r'^prj_[a-f0-9]{20}$')
+    target_id: str = Field(pattern=r'^tgt_[a-f0-9]{20}$')
+    version_id: Optional[str] = Field(default=None, pattern=r'^tgv_[a-f0-9]{20}$')
+    sample_input: Any
+
+    @field_validator('sample_input')
+    @classmethod
+    def limit_sample_size(cls, value: Any) -> Any:
+        try:
+            encoded = json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        except (TypeError, ValueError):
+            raise ValueError('试调输入必须是可序列化的 JSON 数据') from None
+        if len(encoded) > 64 * 1024:
+            raise ValueError('试调输入不能超过 64 KiB')
+        return value
+
+
+class TargetConnectionCheck(WorkbenchModel):
+    schema_version: int = 1
+    id: str = Field(pattern=r'^tcc_[a-f0-9]{20}$')
+    target_id: str = Field(pattern=r'^tgt_[a-f0-9]{20}$')
+    version_id: str = Field(pattern=r'^tgv_[a-f0-9]{20}$')
+    status: ConnectionCheckStatus
+    checked_at: str
+    duration_ms: int = Field(ge=0)
+    http_status: Optional[int] = Field(default=None, ge=100, le=599)
+    output_type: Optional[str] = Field(default=None, max_length=80)
+    output_hash: Optional[str] = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+    error_code: Optional[str] = Field(default=None, max_length=80)
+
+
+class _NoRedirectHandler(urllib_request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _resolve_credential(reference: Optional[str]) -> Optional[str]:
+    if reference is None:
+        return None
+    if reference.startswith('env:'):
+        value = os.environ.get(reference.removeprefix('env:'))
+        if not value:
+            raise WorkbenchActionError(
+                code='TARGET_CREDENTIAL_UNAVAILABLE',
+                message='服务端凭据引用不可用，请检查本地环境变量后重试。',
+            )
+        return value
+
+    service, account = reference.removeprefix('keychain:').split('/', 1)
+    security = Path('/usr/bin/security')
+    if not security.is_file():
+        raise WorkbenchActionError(
+            code='TARGET_CREDENTIAL_UNAVAILABLE',
+            message='当前系统无法读取钥匙串凭据，请检查服务端运行环境。',
+        )
+    try:
+        result = subprocess.run(
+            [str(security), 'find-generic-password', '-s', service, '-a', account, '-w'],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise WorkbenchActionError(
+            code='TARGET_CREDENTIAL_UNAVAILABLE',
+            message='服务端无法读取钥匙串凭据，请检查本地配置。',
+        ) from None
+    value = result.stdout.strip() if result.returncode == 0 else ''
+    if not value:
+        raise WorkbenchActionError(
+            code='TARGET_CREDENTIAL_UNAVAILABLE',
+            message='钥匙串凭据引用不存在或不可访问，请检查本地配置。',
+        )
+    return value
+
+
+def _path_tokens(path: str) -> list[str | int]:
+    if re.fullmatch(_FIELD_PATH_PATTERN, path) is None:
+        raise ValueError('invalid field path')
+    tokens: list[str | int] = []
+    for name, index in re.findall(r'([A-Za-z_][A-Za-z0-9_-]*)|\[(\d+)\]', path):
+        tokens.append(name if name else int(index))
+    if not tokens or not isinstance(tokens[0], str):
+        raise ValueError('invalid field path')
+    return tokens
+
+
+def _set_path(path: str, value: Any) -> dict[str, Any]:
+    tokens = _path_tokens(path)
+    root: dict[str, Any] = {}
+    current: Any = root
+    for position, token in enumerate(tokens):
+        final = position == len(tokens) - 1
+        if isinstance(token, str):
+            if final:
+                current[token] = value
+                continue
+            next_value: Any = [] if isinstance(tokens[position + 1], int) else {}
+            current[token] = next_value
+            current = next_value
+            continue
+        while len(current) <= token:
+            current.append(None)
+        if final:
+            current[token] = value
+        else:
+            next_value = [] if isinstance(tokens[position + 1], int) else {}
+            current[token] = next_value
+            current = next_value
+    return root
+
+
+def _get_path(payload: Any, path: str) -> Any:
+    current = payload
+    for token in _path_tokens(path):
+        if isinstance(token, str) and isinstance(current, dict) and token in current:
+            current = current[token]
+        elif isinstance(token, int) and isinstance(current, list) and token < len(current):
+            current = current[token]
+        else:
+            raise KeyError(path)
+    return current
+
+
+def _trial_body(version: TargetVersion, sample_input: Any) -> dict[str, Any]:
+    if version.connection.adapter == 'openai_chat_completions':
+        return {
+            'model': version.connection.model_id,
+            'messages': [{'role': 'user', 'content': sample_input}],
+        }
+    if version.connection.adapter == 'openai_responses':
+        return {'model': version.connection.model_id, 'input': sample_input}
+    return _set_path(version.connection.input_field, sample_input)
+
+
+def _perform_http_trial(version: TargetVersion, sample_input: Any) -> dict[str, Any]:
+    if version.connection.adapter == 'evalscope_model':
+        return {'status': 'failed', 'error_code': 'ADAPTER_TRIAL_NOT_SUPPORTED', 'duration_ms': 0}
+
+    credential = _resolve_credential(version.connection.credential_ref)
+    headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
+    if credential:
+        headers['Authorization'] = f'Bearer {credential}'
+    body = json.dumps(_trial_body(version, sample_input), ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    request = urllib_request.Request(
+        version.connection.endpoint,
+        data=body,
+        headers=headers,
+        method=version.connection.method,
+    )
+    started = time.monotonic()
+    try:
+        with urllib_request.build_opener(urllib_request.ProxyHandler({}), _NoRedirectHandler()).open(
+            request,
+            timeout=version.connection.timeout_seconds,
+        ) as response:
+            raw = response.read(1024 * 1024 + 1)
+            status = response.status
+    except urllib_error.HTTPError as error:
+        return {
+            'status': 'failed',
+            'error_code': 'HTTP_STATUS_ERROR',
+            'http_status': error.code,
+            'duration_ms': round((time.monotonic() - started) * 1000),
+        }
+    except (urllib_error.URLError, TimeoutError, OSError):
+        return {
+            'status': 'failed',
+            'error_code': 'CONNECTION_FAILED',
+            'duration_ms': round((time.monotonic() - started) * 1000),
+        }
+
+    duration_ms = round((time.monotonic() - started) * 1000)
+    if len(raw) > 1024 * 1024:
+        return {
+            'status': 'failed',
+            'error_code': 'RESPONSE_TOO_LARGE',
+            'http_status': status,
+            'duration_ms': duration_ms,
+        }
+    try:
+        response_payload = json.loads(raw.decode('utf-8'))
+        output = _get_path(response_payload, version.connection.output_path)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return {
+            'status': 'failed',
+            'error_code': 'INVALID_JSON_RESPONSE',
+            'http_status': status,
+            'duration_ms': duration_ms,
+        }
+    except KeyError:
+        return {
+            'status': 'failed',
+            'error_code': 'OUTPUT_PATH_NOT_FOUND',
+            'http_status': status,
+            'duration_ms': duration_ms,
+        }
+
+    return {
+        'status': 'passed',
+        'http_status': status,
+        'duration_ms': duration_ms,
+        'output_type': type(output).__name__,
+        'output_hash': content_hash(output),
+    }
 
 
 class TargetStore:
@@ -328,6 +546,61 @@ class TargetStore:
         ]
         summaries.sort(key=lambda item: item.version_number, reverse=True)
         return TargetDetail(target=manifest, version=version, versions=summaries)
+
+    def check_connection(self, payload: TargetConnectionCheckPayload, operation_id: str) -> TargetConnectionCheck:
+        detail = self.get(
+            TargetGetPayload(
+                project_id=payload.project_id,
+                target_id=payload.target_id,
+                version_id=payload.version_id,
+            )
+        )
+        target_root = self._target_root(Path(self.projects.get(payload.project_id).root_path), payload.target_id)
+        check_id = f'tcc_{operation_id[:20]}'
+        check_path = target_root / 'connection_checks' / f'{check_id}.json'
+        if check_path.is_file():
+            try:
+                return TargetConnectionCheck.model_validate_json(check_path.read_text(encoding='utf-8'))
+            except (OSError, ValueError, json.JSONDecodeError):
+                raise WorkbenchActionError(
+                    code='STORAGE_CORRUPTED',
+                    message='连接试调记录无法读取，请检查文件完整性。',
+                    status_code=500,
+                    details={'target_id': payload.target_id, 'check_id': check_id},
+                ) from None
+
+        outcome = _perform_http_trial(detail.version, payload.sample_input)
+        checked_at = datetime.now(timezone.utc).isoformat()
+        check = TargetConnectionCheck(
+            id=check_id,
+            target_id=payload.target_id,
+            version_id=detail.version.id,
+            checked_at=checked_at,
+            **outcome,
+        )
+        atomic_write_json(check_path, check.model_dump(mode='json', exclude_none=True))
+
+        connection_status: ConnectionStatus = 'passed' if check.status == 'passed' else 'failed'
+        version = detail.version.model_copy(
+            update={
+                'connection_status': connection_status,
+                'last_connected_at': checked_at if check.status == 'passed' else detail.version.last_connected_at,
+                'last_connection_check_id': check.id,
+            }
+        )
+        atomic_write_json(
+            self._version_path(target_root, version.id),
+            version.model_dump(mode='json', exclude_none=True),
+        )
+        if detail.target.latest_version_id == version.id:
+            manifest = detail.target.model_copy(
+                update={
+                    'status': 'ready' if check.status == 'passed' else 'unavailable',
+                    'updated_at': checked_at,
+                }
+            )
+            atomic_write_json(target_root / 'target.json', manifest.model_dump(mode='json', exclude_none=True))
+        return check
 
     @staticmethod
     def _config_hash(payload: TargetCreatePayload) -> str:

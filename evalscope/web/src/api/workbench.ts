@@ -119,6 +119,7 @@ export interface TargetVersion {
   runtime_binding?: TargetRuntimeBinding
   connection_status: TargetConnectionStatus
   last_connected_at?: string
+  last_connection_check_id?: string
   config_hash: string
   created_at: string
 }
@@ -175,6 +176,39 @@ export interface TargetCreatePreview {
   confirmation: Confirmation
 }
 
+export interface TargetConnectionCheck {
+  schema_version: number
+  id: string
+  target_id: string
+  version_id: string
+  status: 'passed' | 'failed'
+  checked_at: string
+  duration_ms: number
+  http_status?: number
+  output_type?: string
+  output_hash?: string
+  error_code?: string
+}
+
+export interface TargetConnectionCheckPreview {
+  preview: {
+    project_id: string
+    target_id: string
+    version_id: string
+    adapter: TargetAdapter
+    endpoint_origin?: string
+    credential_configured?: boolean
+    starts_external_call: boolean
+    may_consume_model_quota?: boolean
+    persists_sample_input?: boolean
+    persists_full_output?: boolean
+  }
+  confirmation?: Confirmation
+  verdict: ActionResult<unknown>['verdict']
+  blockingReasons: string[]
+  warnings: string[]
+}
+
 export class WorkbenchActionError extends Error {
   readonly code: string
   readonly fieldErrors: ActionErrorDetail['field_errors']
@@ -202,7 +236,12 @@ async function executeAction<T>(
     confirmationToken?: string
     idempotencyKey?: string
   } = {},
-): Promise<{ data: T; warnings: string[] }> {
+): Promise<{
+  data: T
+  warnings: string[]
+  verdict: ActionResult<T>['verdict']
+  blockingReasons: string[]
+}> {
   const response = await apiPostValidated<ActionResponse<T>>(
     ACTION_ENDPOINT,
     {
@@ -226,7 +265,12 @@ async function executeAction<T>(
       field_errors: [],
     })
   }
-  return { data: response.result.data, warnings: response.warnings ?? [] }
+  return {
+    data: response.result.data,
+    warnings: response.warnings ?? [],
+    verdict: response.result.verdict,
+    blockingReasons: response.result.blocking_reasons ?? [],
+  }
 }
 
 export async function listProjects(signal?: AbortSignal): Promise<{
@@ -317,4 +361,41 @@ export async function confirmTargetCreate(
     { confirmationToken, idempotencyKey, signal },
   )
   return response.data.target
+}
+
+export async function previewTargetConnectionCheck(
+  projectId: string,
+  targetId: string,
+  versionId: string,
+  sampleInput: unknown,
+  signal?: AbortSignal,
+): Promise<TargetConnectionCheckPreview> {
+  const response = await executeAction<Omit<TargetConnectionCheckPreview, 'verdict' | 'blockingReasons' | 'warnings'>>(
+    'target.connection.check',
+    { project_id: projectId, target_id: targetId, version_id: versionId, sample_input: sampleInput },
+    { dryRun: true, signal },
+  )
+  return {
+    ...response.data,
+    verdict: response.verdict,
+    blockingReasons: response.blockingReasons,
+    warnings: response.warnings,
+  }
+}
+
+export async function confirmTargetConnectionCheck(
+  projectId: string,
+  targetId: string,
+  versionId: string,
+  sampleInput: unknown,
+  confirmationToken: string,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+): Promise<{ check: TargetConnectionCheck; target: TargetDetail; warnings: string[] }> {
+  const response = await executeAction<{ check: TargetConnectionCheck; target: TargetDetail }>(
+    'target.connection.check',
+    { project_id: projectId, target_id: targetId, version_id: versionId, sample_input: sampleInput },
+    { confirmationToken, idempotencyKey, signal },
+  )
+  return { ...response.data, warnings: response.warnings }
 }

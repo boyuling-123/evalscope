@@ -43,6 +43,7 @@ def test_discovery_only_exposes_registered_actions(tmp_path):
         'project.create',
         'project.get',
         'project.list',
+        'target.connection.check',
         'target.create',
         'target.get',
         'target.list',

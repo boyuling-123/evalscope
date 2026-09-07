@@ -4,6 +4,7 @@
 from dataclasses import dataclass
 from threading import RLock
 from typing import Any, Callable, Dict, Literal, Optional, Type
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ValidationError
 
@@ -22,6 +23,7 @@ from .errors import WorkbenchActionError
 from .persistence import ActionStateStore
 from .projects import ProjectCreatePayload, ProjectGetPayload, ProjectListPayload, ProjectStore
 from .targets import (
+    TargetConnectionCheckPayload,
     TargetCreatePayload,
     TargetDetail,
     TargetGetPayload,
@@ -164,7 +166,7 @@ class ActionRegistry:
             ActionExecutionContext(request=request, operation_id=self.state.operation_id(request)),
         )
         result_data = dict(handler_result.data)
-        if descriptor.requires_confirmation and request.dry_run:
+        if descriptor.requires_confirmation and request.dry_run and handler_result.verdict == 'ready':
             result_data['confirmation'] = self.state.issue_confirmation(request, fingerprint)
         if confirmation_path is not None:
             self.state.consume_confirmation(confirmation_path)
@@ -393,6 +395,79 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             next_action='target.list',
         )
 
+    def check_target_connection(
+        payload: TargetConnectionCheckPayload,
+        context: ActionExecutionContext,
+    ) -> HandlerResult:
+        detail = targets.get(
+            TargetGetPayload(
+                project_id=payload.project_id,
+                target_id=payload.target_id,
+                version_id=payload.version_id,
+            )
+        )
+        if detail.version.connection.adapter == 'evalscope_model':
+            return HandlerResult(
+                verdict='blocked',
+                data={
+                    'preview': {
+                        'project_id': payload.project_id,
+                        'target_id': payload.target_id,
+                        'version_id': detail.version.id,
+                        'adapter': detail.version.connection.adapter,
+                        'starts_external_call': False,
+                    }
+                },
+                blocking_reasons=('EvalScope 本地模型试调适配器尚未实现，请改用现有评测任务验证。',),
+                next_action='target.get',
+            )
+        if context.request.dry_run:
+            endpoint = urlsplit(detail.version.connection.endpoint or '')
+            return HandlerResult(
+                verdict='ready',
+                data={
+                    'preview': {
+                        'project_id': payload.project_id,
+                        'target_id': payload.target_id,
+                        'version_id': detail.version.id,
+                        'adapter': detail.version.connection.adapter,
+                        'endpoint_origin': f'{endpoint.scheme}://{endpoint.netloc}',
+                        'credential_configured': detail.version.connection.credential_ref is not None,
+                        'starts_external_call': True,
+                        'may_consume_model_quota': True,
+                        'persists_sample_input': False,
+                        'persists_full_output': False,
+                    }
+                },
+                next_action='target.connection.check',
+                warnings=('确认后将发送一次真实请求，可能产生模型调用费用；当前预览不会联网。',),
+            )
+        if context.operation_id is None:
+            raise WorkbenchActionError(
+                code='IDEMPOTENCY_KEY_REQUIRED',
+                message='连接试调需要幂等键。',
+            )
+        check = targets.check_connection(payload, context.operation_id)
+        refreshed = targets.get(
+            TargetGetPayload(
+                project_id=payload.project_id,
+                target_id=payload.target_id,
+                version_id=check.version_id,
+            )
+        )
+        passed = check.status == 'passed'
+        return HandlerResult(
+            verdict='completed',
+            data={
+                'check': check.model_dump(mode='json', exclude_none=True),
+                'target': public_target_detail(refreshed),
+            },
+            next_action='target.get' if passed else 'target.connection.check',
+            warnings=(
+                ('真实试调成功，对象已进入正式候选池。' if passed else '真实试调失败，对象不会进入正式候选池。'),
+            ),
+        )
+
     definitions = [
         (
             ActionDescriptor(
@@ -461,6 +536,23 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             ),
             ProjectListPayload,
             list_projects,
+        ),
+        (
+            ActionDescriptor(
+                name='target.connection.check',
+                version='1.0',
+                access='write',
+                description='确认后向指定对象版本发送一次真实试调请求，并保存脱敏结果。',
+                when_to_use='对象接入配置已保存，需要验证真实请求与输出映射后调用。',
+                prerequisites=['有效 project_id、target_id', '明确单条试调输入', '正式调用前完成 dry_run 确认'],
+                next_action='target.get',
+                supports_dry_run=True,
+                requires_idempotency=True,
+                requires_confirmation=True,
+                input_schema=TargetConnectionCheckPayload.model_json_schema(),
+            ),
+            TargetConnectionCheckPayload,
+            check_target_connection,
         ),
         (
             ActionDescriptor(
