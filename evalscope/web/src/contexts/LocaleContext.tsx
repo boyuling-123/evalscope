@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { lookupTranslation, type Locale } from '@/i18n/translations'
 
 /**
@@ -21,10 +21,21 @@ const LocaleContext = createContext<LocaleCtx>({
   t: (p) => p,
 })
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(
-    () => (localStorage.getItem('evalscope-locale') as Locale) || 'en',
-  )
+export function LocaleProvider({
+  children,
+  defaultLocale = 'en',
+}: {
+  children: ReactNode
+  defaultLocale?: Locale
+}) {
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    const saved = localStorage.getItem('evalscope-locale')
+    return saved === 'en' || saved === 'zh' ? saved : defaultLocale
+  })
+
+  useEffect(() => {
+    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+  }, [locale])
 
   const setLocale = useCallback((l: Locale) => {
     localStorage.setItem('evalscope-locale', l)

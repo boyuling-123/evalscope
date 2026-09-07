@@ -114,7 +114,7 @@ export default function TaskRunnerShell({
 
   return (
     <div className="page-enter">
-      <h1 className="text-xl font-semibold mb-6">{title}</h1>
+      <h2 className="mb-6 text-xl font-semibold">{title}</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card title={configTitle}>{renderForm({ onSubmit: handleSubmit, disabled: running })}</Card>
         <Card title={statusTitle}>

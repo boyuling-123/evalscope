@@ -1,23 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>EvalScope</title>
+    <title>AI 模型评测工作台 · EvalScope</title>
     <script>
       // Apply theme before first paint to avoid FOUC.
-      // Order: explicit user preference (localStorage) > OS preference (prefers-color-scheme) > dark.
+      // Order: explicit user preference (localStorage) > Chinese workbench default (light).
       ;(function () {
         var saved = localStorage.getItem('evalscope-theme')
-        var theme
-        if (saved === 'light' || saved === 'dark') {
-          theme = saved
-        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-          theme = 'light'
-        } else {
-          theme = 'dark'
-        }
+        var theme = saved === 'light' || saved === 'dark' ? saved : 'light'
         document.documentElement.setAttribute('data-theme', theme)
       })()
     </script>
