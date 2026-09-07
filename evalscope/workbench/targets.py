@@ -111,6 +111,7 @@ class TargetVersion(WorkbenchModel):
     schema_version: int = 1
     id: str = Field(pattern=r'^tgv_[a-f0-9]{20}$')
     target_id: str = Field(pattern=r'^tgt_[a-f0-9]{20}$')
+    based_on_version_id: Optional[str] = Field(default=None, pattern=r'^tgv_[a-f0-9]{20}$')
     version_number: int = Field(ge=1)
     label: str = Field(min_length=1, max_length=80)
     provider: str = Field(min_length=1, max_length=120)
@@ -127,6 +128,7 @@ class TargetVersion(WorkbenchModel):
 
 class TargetVersionSummary(WorkbenchModel):
     id: str
+    based_on_version_id: Optional[str] = Field(default=None, pattern=r'^tgv_[a-f0-9]{20}$')
     version_number: int
     label: str
     provider: str
@@ -189,6 +191,40 @@ class TargetCreatePayload(WorkbenchModel):
     def validate_runtime_binding(self):
         if self.type == 'skill' and self.runtime_binding is None:
             raise ValueError('Skill 对象必须绑定宿主运行时、参数、Tool 契约、加载方式和输入预处理')
+        return self
+
+
+class TargetVersionCreatePayload(WorkbenchModel):
+    project_id: str = Field(pattern=r'^prj_[a-f0-9]{20}$')
+    target_id: str = Field(pattern=r'^tgt_[a-f0-9]{20}$')
+    base_version_id: str = Field(pattern=r'^tgv_[a-f0-9]{20}$')
+    version_label: str = Field(min_length=1, max_length=80)
+    provider: str = Field(min_length=1, max_length=120)
+    input_modalities: list[TargetModality] = Field(min_length=1, max_length=4)
+    output_modalities: list[TargetModality] = Field(min_length=1, max_length=4)
+    connection: TargetConnection
+    runtime_binding: Optional[TargetRuntimeBinding] = None
+    reuse_base_credential: bool = False
+
+    @field_validator('version_label', 'provider')
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError('字段不能为空')
+        return normalized
+
+    @field_validator('input_modalities', 'output_modalities')
+    @classmethod
+    def reject_duplicate_modalities(cls, values: list[TargetModality]) -> list[TargetModality]:
+        if len(set(values)) != len(values):
+            raise ValueError('输入输出模态不能重复')
+        return values
+
+    @model_validator(mode='after')
+    def validate_credential_mode(self):
+        if self.reuse_base_credential and self.connection.credential_ref is not None:
+            raise ValueError('沿用已有凭据时不能同时提供新的凭据引用')
         return self
 
 
@@ -492,6 +528,114 @@ class TargetStore:
         atomic_write_json(target_path, manifest.model_dump(mode='json', exclude_none=True))
         return self.get(TargetGetPayload(project_id=payload.project_id, target_id=target_id))
 
+    def create_version(self, payload: TargetVersionCreatePayload, operation_id: str) -> TargetDetail:
+        base_detail = self.get(
+            TargetGetPayload(
+                project_id=payload.project_id,
+                target_id=payload.target_id,
+                version_id=payload.base_version_id,
+            )
+        )
+        if base_detail.target.type == 'skill' and payload.runtime_binding is None:
+            raise WorkbenchActionError(
+                code='VALIDATION_FAILED',
+                message='Skill 对象的新版本必须继续冻结完整运行绑定。',
+                field_errors=[
+                    {
+                        'field': 'runtime_binding',
+                        'message': 'Skill 对象必须绑定宿主运行时、参数、Tool 契约、加载方式和输入预处理',
+                        'type': 'value_error',
+                    }
+                ],
+            )
+
+        connection = payload.connection
+        if payload.reuse_base_credential:
+            inherited_reference = base_detail.version.connection.credential_ref
+            if inherited_reference is None:
+                raise WorkbenchActionError(
+                    code='TARGET_CREDENTIAL_REFERENCE_MISSING',
+                    message='基线版本没有可沿用的服务端凭据引用，请改为提供新引用或不使用鉴权。',
+                )
+            connection = connection.model_copy(update={'credential_ref': inherited_reference})
+
+        config_hash = self._version_config_hash(
+            label=payload.version_label,
+            provider=payload.provider,
+            input_modalities=payload.input_modalities,
+            output_modalities=payload.output_modalities,
+            connection=connection,
+            runtime_binding=payload.runtime_binding,
+        )
+        project_root = Path(self.projects.get(payload.project_id).root_path)
+        target_root = self._target_root(project_root, payload.target_id)
+        target_path = target_root / 'target.json'
+        version_id = f'tgv_{operation_id[:20]}'
+        version_path = self._version_path(target_root, version_id)
+
+        if version_path.exists():
+            existing = self._read_version(version_path, payload.target_id)
+            if existing.config_hash != config_hash or existing.based_on_version_id != payload.base_version_id:
+                raise WorkbenchActionError(
+                    code='IDEMPOTENCY_CONFLICT',
+                    message='该创建操作已生成不同对象版本，请更换幂等键。',
+                    status_code=409,
+                )
+            if base_detail.target.latest_version_id == payload.base_version_id:
+                now = datetime.now(timezone.utc).isoformat()
+                manifest = base_detail.target.model_copy(
+                    update={'latest_version_id': existing.id, 'status': 'draft', 'updated_at': now}
+                )
+                atomic_write_json(target_path, manifest.model_dump(mode='json', exclude_none=True))
+            return self.get(
+                TargetGetPayload(
+                    project_id=payload.project_id,
+                    target_id=payload.target_id,
+                    version_id=version_id,
+                )
+            )
+
+        if base_detail.target.latest_version_id != payload.base_version_id:
+            raise WorkbenchActionError(
+                code='TARGET_VERSION_CONFLICT',
+                message='对象已有更新版本，请刷新页面后基于最新版重新创建。',
+                status_code=409,
+                details={
+                    'target_id': payload.target_id,
+                    'expected_base_version_id': base_detail.target.latest_version_id,
+                },
+            )
+
+        versions = self._list_versions(target_root, payload.target_id)
+        now = datetime.now(timezone.utc).isoformat()
+        version = TargetVersion(
+            id=version_id,
+            target_id=payload.target_id,
+            based_on_version_id=payload.base_version_id,
+            version_number=max(item.version_number for item in versions) + 1,
+            label=payload.version_label,
+            provider=payload.provider,
+            input_modalities=payload.input_modalities,
+            output_modalities=payload.output_modalities,
+            connection=connection,
+            runtime_binding=payload.runtime_binding,
+            connection_status='untested',
+            config_hash=config_hash,
+            created_at=now,
+        )
+        atomic_write_json(version_path, version.model_dump(mode='json', exclude_none=True))
+        manifest = base_detail.target.model_copy(
+            update={'latest_version_id': version.id, 'status': 'draft', 'updated_at': now}
+        )
+        atomic_write_json(target_path, manifest.model_dump(mode='json', exclude_none=True))
+        return self.get(
+            TargetGetPayload(
+                project_id=payload.project_id,
+                target_id=payload.target_id,
+                version_id=version.id,
+            )
+        )
+
     def list(self, payload: TargetListPayload) -> tuple[list[TargetSummary], list[str]]:
         project = self.projects.get(payload.project_id)
         targets_root = Path(project.root_path) / 'targets'
@@ -534,6 +678,7 @@ class TargetStore:
         summaries = [
             TargetVersionSummary(
                 id=item.id,
+                based_on_version_id=item.based_on_version_id,
                 version_number=item.version_number,
                 label=item.label,
                 provider=item.provider,
@@ -604,12 +749,42 @@ class TargetStore:
 
     @staticmethod
     def _config_hash(payload: TargetCreatePayload) -> str:
+        return TargetStore._version_config_hash(
+            label=payload.version_label,
+            provider=payload.provider,
+            input_modalities=payload.input_modalities,
+            output_modalities=payload.output_modalities,
+            connection=payload.connection,
+            runtime_binding=payload.runtime_binding,
+        )
+
+    @staticmethod
+    def _version_config_hash(
+        *,
+        label: str,
+        provider: str,
+        input_modalities: list[TargetModality],
+        output_modalities: list[TargetModality],
+        connection: TargetConnection,
+        runtime_binding: Optional[TargetRuntimeBinding],
+    ) -> str:
+        public_connection = connection.model_dump(
+            mode='json',
+            exclude={'credential_ref'},
+            exclude_none=True,
+        )
+        public_connection['credential_configured'] = connection.credential_ref is not None
         return content_hash(
-            payload.model_dump(
-                mode='json',
-                exclude={'project_id', 'name', 'description', 'capabilities'},
-                exclude_none=True,
-            )
+            {
+                'version_label': label,
+                'provider': provider,
+                'input_modalities': input_modalities,
+                'output_modalities': output_modalities,
+                'connection': public_connection,
+                'runtime_binding': (
+                    runtime_binding.model_dump(mode='json', exclude_none=True) if runtime_binding is not None else None
+                ),
+            }
         )
 
     @staticmethod

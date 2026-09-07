@@ -13,6 +13,7 @@
 | `target.list` | 只读 | 查询指定项目的评测对象，可按类型和状态过滤 |
 | `target.get` | 只读 | 读取指定对象及版本，不返回凭据引用内容 |
 | `target.create` | 写入 | 创建 Target 与不可变首版本；必须先 `dry_run` 确认，不自动试调 |
+| `target.version.create` | 写入 | 基于当前最新版创建不可变后续版本；保留旧版本且不自动试调 |
 | `target.connection.check` | 写入／外部请求 | 预览后向指定版本发送一次真实试调，只保存脱敏结果 |
 
 尚未实现的数据集、评估器、Run 与 MCP Action 不会出现在发现结果中。新建 Target 固定保存为 `draft / untested`，只有 `target.connection.check` 的真实试调成功后才能进入正式候选池。
@@ -55,9 +56,9 @@ projects/<project_id>/targets/<target_id>/versions/<version_id>.json
 projects/<project_id>/targets/<target_id>/connection_checks/<check_id>.json
 ```
 
-对象版本冻结 Provider、输入输出模态、接口适配器、字段映射和超时时间。Skill 还必须冻结宿主运行时、模型参数引用、Tool 契约、加载方式与输入预处理。鉴权只接受 `env:VARIABLE` 或 `keychain:service/item` 引用；Action 返回值不会把引用名称写入前端状态。
+对象版本冻结 Provider、输入输出模态、接口适配器、字段映射和超时时间。Skill 还必须冻结宿主运行时、模型参数引用、Tool 契约、加载方式与输入预处理。鉴权只接受 `env:VARIABLE` 或 `keychain:service/item` 引用；Action 返回值不会把引用名称写入前端状态。后续版本记录 `based_on_version_id`，并要求基线仍是当前最新版；并发页面使用过期基线提交时返回 `TARGET_VERSION_CONFLICT`，不会覆盖其他版本。
 
-Web 工作台的“评测对象”页面直接使用以上四个 Target Action。接入流程会先调用 `target.create` 的 `dry_run`，用户在确认页检查写入范围后才提交正式写入；该流程只保存未试调草稿，不会触发模型调用。对象详情只展示凭据是否已配置，不展示引用名称或原始值。
+Web 工作台的“评测对象”页面直接使用以上五个 Target Action。接入流程会先调用 `target.create` 的 `dry_run`，用户在确认页检查写入范围后才提交正式写入；版本页以当前最新版预填配置并通过 `target.version.create` 生成后续版本。两种流程都只保存未试调草稿，不会触发模型调用。对象详情只展示凭据是否已配置，不展示引用名称或原始值；新版本可显式沿用服务端凭据引用而无需把引用名发送回浏览器。
 
 ## 真实连接试调
 

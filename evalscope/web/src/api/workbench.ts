@@ -110,6 +110,7 @@ export interface TargetVersion {
   schema_version: number
   id: string
   target_id: string
+  based_on_version_id?: string
   version_number: number
   label: string
   provider: string
@@ -126,6 +127,7 @@ export interface TargetVersion {
 
 export interface TargetVersionSummary {
   id: string
+  based_on_version_id?: string
   version_number: number
   label: string
   provider: string
@@ -168,6 +170,37 @@ export interface TargetCreatePreview {
     version_label: string
     adapter: TargetAdapter
     credential_configured: boolean
+    initial_status: 'draft'
+    connection_status: 'untested'
+    writes: string[]
+    starts_connection_test: false
+  }
+  confirmation: Confirmation
+}
+
+export interface TargetVersionCreateInput {
+  project_id: string
+  target_id: string
+  base_version_id: string
+  version_label: string
+  provider: string
+  input_modalities: TargetModality[]
+  output_modalities: TargetModality[]
+  connection: TargetConnectionInput
+  runtime_binding?: TargetRuntimeBinding
+  reuse_base_credential: boolean
+}
+
+export interface TargetVersionCreatePreview {
+  preview: {
+    project_id: string
+    target_id: string
+    base_version_id: string
+    next_version_number: number
+    version_label: string
+    adapter: TargetAdapter
+    credential_configured: boolean
+    reuses_server_credential: boolean
     initial_status: 'draft'
     connection_status: 'untested'
     writes: string[]
@@ -357,6 +390,32 @@ export async function confirmTargetCreate(
 ): Promise<TargetDetail> {
   const response = await executeAction<{ target: TargetDetail }>(
     'target.create',
+    input,
+    { confirmationToken, idempotencyKey, signal },
+  )
+  return response.data.target
+}
+
+export async function previewTargetVersionCreate(
+  input: TargetVersionCreateInput,
+  signal?: AbortSignal,
+): Promise<TargetVersionCreatePreview> {
+  const response = await executeAction<TargetVersionCreatePreview>(
+    'target.version.create',
+    input,
+    { dryRun: true, signal },
+  )
+  return response.data
+}
+
+export async function confirmTargetVersionCreate(
+  input: TargetVersionCreateInput,
+  confirmationToken: string,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+): Promise<TargetDetail> {
+  const response = await executeAction<{ target: TargetDetail }>(
+    'target.version.create',
     input,
     { confirmationToken, idempotencyKey, signal },
   )

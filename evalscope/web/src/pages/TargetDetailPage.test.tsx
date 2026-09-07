@@ -9,8 +9,20 @@ import TargetDetailPage from './TargetDetailPage'
 const PROJECT_ID = 'prj_0123456789abcdefabcd'
 const TARGET_ID = 'tgt_0123456789abcdefabcd'
 
-const mocks = vi.hoisted(() => ({ getTarget: vi.fn() }))
-vi.mock('@/api/workbench', () => ({ getTarget: mocks.getTarget }))
+const mocks = vi.hoisted(() => ({
+  getTarget: vi.fn(),
+  previewTargetVersionCreate: vi.fn(),
+  confirmTargetVersionCreate: vi.fn(),
+  previewTargetConnectionCheck: vi.fn(),
+  confirmTargetConnectionCheck: vi.fn(),
+}))
+vi.mock('@/api/workbench', () => ({
+  getTarget: mocks.getTarget,
+  previewTargetVersionCreate: mocks.previewTargetVersionCreate,
+  confirmTargetVersionCreate: mocks.confirmTargetVersionCreate,
+  previewTargetConnectionCheck: mocks.previewTargetConnectionCheck,
+  confirmTargetConnectionCheck: mocks.confirmTargetConnectionCheck,
+}))
 
 const DETAIL: TargetDetail = {
   target: {
@@ -114,5 +126,24 @@ describe('TargetDetailPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: '版本' }))
     expect(screen.getByRole('heading', { level: 2, name: '不可变版本' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'release-1 · #1' })).toBeInTheDocument()
+  })
+
+  it('opens a prefilled immutable-version flow from the versions tab', async () => {
+    mocks.getTarget.mockResolvedValue(DETAIL)
+    renderPage()
+    await act(async () => { await Promise.resolve() })
+
+    fireEvent.click(screen.getByRole('tab', { name: '版本' }))
+    fireEvent.click(screen.getByRole('button', { name: '创建新版本' }))
+
+    expect(screen.getByRole('dialog', { name: '创建对象版本' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: '创建对象版本' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: '版本标识' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: '接入配置' })).toBeInTheDocument()
+    expect(screen.getByLabelText('版本标签')).toHaveValue('v2')
+    expect(screen.getByLabelText('Provider')).toHaveValue('内部平台')
+    expect(screen.getByRole('checkbox', { name: '沿用基线版本的服务端凭据引用' })).toBeChecked()
+    expect(document.body.textContent).not.toContain('env:')
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
 })

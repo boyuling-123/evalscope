@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   confirmTargetConnectionCheck,
   confirmTargetCreate,
+  confirmTargetVersionCreate,
   confirmProjectCreate,
   getTarget,
   listTargets,
@@ -9,10 +10,12 @@ import {
   previewProjectCreate,
   previewTargetConnectionCheck,
   previewTargetCreate,
+  previewTargetVersionCreate,
   type ProjectRecord,
   type TargetCreateInput,
   type TargetConnectionCheck,
   type TargetDetail,
+  type TargetVersionCreateInput,
 } from './workbench'
 
 const PROJECT: ProjectRecord = {
@@ -254,6 +257,71 @@ describe('workbench Action client', () => {
       dry_run: false,
       confirmation_token: 'confirm_target',
       idempotency_key: 'create-target-test',
+    })
+  })
+
+  it('previews and confirms an immutable target version through the guarded Action flow', async () => {
+    const input: TargetVersionCreateInput = {
+      project_id: PROJECT.id,
+      target_id: TARGET_DETAIL.target.id,
+      base_version_id: TARGET_DETAIL.version.id,
+      version_label: 'v2',
+      provider: '本地服务',
+      input_modalities: ['text'],
+      output_modalities: ['text'],
+      connection: {
+        adapter: 'openai_responses',
+        endpoint: 'http://127.0.0.1:9000/v2/responses',
+        model_id: 'customer-agent-v2',
+        method: 'POST',
+        input_field: 'input',
+        output_path: 'output_text',
+        timeout_seconds: 60,
+      },
+      reuse_base_credential: true,
+    }
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => actionResponse({
+          preview: {
+            project_id: PROJECT.id,
+            target_id: TARGET_DETAIL.target.id,
+            base_version_id: TARGET_DETAIL.version.id,
+            next_version_number: 2,
+            version_label: 'v2',
+            adapter: 'openai_responses',
+            credential_configured: true,
+            reuses_server_credential: true,
+            initial_status: 'draft',
+            connection_status: 'untested',
+            writes: ['versions/<version_id>.json', 'target.json'],
+            starts_connection_test: false,
+          },
+          confirmation: { token: 'confirm_target_version', expires_at: '2026-09-08T01:10:00Z' },
+        }, { verdict: 'ready' }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => actionResponse({ target: TARGET_DETAIL }),
+      } as Response)
+
+    const preview = await previewTargetVersionCreate(input)
+    expect(preview.preview).toMatchObject({ next_version_number: 2, starts_connection_test: false })
+    await expect(confirmTargetVersionCreate(
+      input,
+      preview.confirmation.token,
+      'create-target-version-test',
+    )).resolves.toEqual(TARGET_DETAIL)
+
+    const previewBody = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    const createBody = JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))
+    expect(previewBody).toMatchObject({ action: 'target.version.create', dry_run: true, payload: input })
+    expect(createBody).toMatchObject({
+      action: 'target.version.create',
+      dry_run: false,
+      confirmation_token: 'confirm_target_version',
+      idempotency_key: 'create-target-version-test',
     })
   })
 

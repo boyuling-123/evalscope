@@ -67,6 +67,28 @@ def create_target(registry, project_id, key='create-agent-target-v1', **override
     return response
 
 
+def version_payload(target, **overrides):
+    detail = target.result.data['target']
+    payload = {
+        'project_id': detail['target']['project_id'],
+        'target_id': detail['target']['id'],
+        'base_version_id': detail['target']['latest_version_id'],
+        'version_label': '2026-09-candidate-2',
+        'provider': '内部服务',
+        'input_modalities': ['text'],
+        'output_modalities': ['text'],
+        'connection': {
+            'adapter': 'http_json',
+            'endpoint': 'http://127.0.0.1:8123/v2/invoke',
+            'input_field': 'request.input',
+            'output_path': 'data.answer',
+        },
+        'reuse_base_credential': True,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def connection_check_request(target, *, key='check-agent-target-v1', sample_input=None):
     detail = target.result.data['target']
     return action_request(
@@ -144,6 +166,22 @@ def test_target_api_rejects_raw_secret_and_embedded_endpoint_credentials(tmp_pat
         path.read_text(encoding='utf-8') for path in tmp_path.rglob('*') if path.is_file()
     )
     assert secret not in persisted_text
+
+
+def test_public_config_hash_cannot_fingerprint_credential_reference_name(tmp_path):
+    registry = create_default_registry(str(tmp_path))
+    project_id = create_project(registry)
+    first = TargetCreatePayload.model_validate(target_payload(project_id))
+    second_payload = target_payload(project_id)
+    second_payload['connection']['credential_ref'] = 'env:ANOTHER_TARGET_API_KEY'
+    second = TargetCreatePayload.model_validate(second_payload)
+    without_credential = target_payload(project_id)
+    without_credential['connection'].pop('credential_ref')
+
+    assert TargetStore._config_hash(first) == TargetStore._config_hash(second)
+    assert TargetStore._config_hash(first) != TargetStore._config_hash(
+        TargetCreatePayload.model_validate(without_credential)
+    )
 
 
 def test_target_api_rejects_malformed_field_paths(tmp_path):
@@ -226,6 +264,142 @@ def test_target_store_rejects_operation_reuse_with_different_version_config(tmp_
         assert getattr(error, 'code', None) == 'IDEMPOTENCY_CONFLICT'
     else:
         raise AssertionError('reusing an operation ID with a changed immutable version must fail')
+
+
+def test_target_version_preview_does_not_write_or_expose_inherited_credential(tmp_path):
+    registry = create_default_registry(str(tmp_path))
+    project_id = create_project(registry)
+    target = create_target(registry, project_id)
+    payload = version_payload(target)
+    versions_root = (
+        tmp_path / 'projects' / project_id / 'targets' / payload['target_id'] / 'versions'
+    )
+    before = sorted(path.name for path in versions_root.glob('*.json'))
+
+    response = registry.execute(
+        action_request('target.version.create', payload, dry_run=True, idempotency_key='preview-target-v2')
+    )
+
+    assert response.ok
+    assert response.result.verdict == 'ready'
+    assert response.result.data['preview']['next_version_number'] == 2
+    assert response.result.data['preview']['reuses_server_credential'] is True
+    assert response.result.data['preview']['starts_connection_test'] is False
+    assert sorted(path.name for path in versions_root.glob('*.json')) == before
+    assert 'EVAL_TARGET_API_KEY' not in response.model_dump_json()
+
+
+def test_target_version_create_preserves_old_version_and_resets_candidate_status(tmp_path, monkeypatch):
+    registry = create_default_registry(str(tmp_path))
+    project_id = create_project(registry)
+    target = create_target(registry, project_id)
+    first_detail = target.result.data['target']
+    target_root = tmp_path / 'projects' / project_id / 'targets' / first_detail['target']['id']
+    first_version_path = target_root / 'versions' / f'{first_detail["version"]["id"]}.json'
+
+    monkeypatch.setattr(
+        'evalscope.workbench.targets._perform_http_trial',
+        lambda *_args: {
+            'status': 'passed',
+            'http_status': 200,
+            'duration_ms': 4,
+            'output_type': 'str',
+            'output_hash': content_hash('ok'),
+        },
+    )
+    check_request = connection_check_request(target)
+    check_preview = registry.execute(check_request)
+    checked = registry.execute({
+        **check_request,
+        'request_id': 'req_target_v1_checked',
+        'dry_run': False,
+        'confirmation_token': check_preview.result.data['confirmation']['token'],
+    })
+    assert checked.result.data['target']['target']['status'] == 'ready'
+    first_version_bytes = first_version_path.read_bytes()
+
+    created = confirmed_write(
+        registry,
+        'target.version.create',
+        version_payload(target),
+        'create-agent-target-v2',
+    )
+    detail = created.result.data['target']
+
+    assert detail['target']['latest_version_id'] == detail['version']['id']
+    assert detail['target']['status'] == 'draft'
+    assert detail['version']['version_number'] == 2
+    assert detail['version']['based_on_version_id'] == first_detail['version']['id']
+    assert detail['version']['connection_status'] == 'untested'
+    assert detail['version']['connection']['credential_configured'] is True
+    assert first_version_path.read_bytes() == first_version_bytes
+    first_from_history = TargetStore(str(tmp_path)).get(TargetGetPayload(
+        project_id=project_id,
+        target_id=detail['target']['id'],
+        version_id=first_detail['version']['id'],
+    ))
+    assert first_from_history.version.connection_status == 'passed'
+    stored_new = json.loads(
+        (target_root / 'versions' / f'{detail["version"]["id"]}.json').read_text(encoding='utf-8')
+    )
+    assert stored_new['connection']['credential_ref'] == 'env:EVAL_TARGET_API_KEY'
+    assert 'EVAL_TARGET_API_KEY' not in created.model_dump_json()
+
+
+def test_target_version_create_rejects_stale_base_and_missing_inherited_credential(tmp_path):
+    registry = create_default_registry(str(tmp_path))
+    project_id = create_project(registry)
+    target = create_target(registry, project_id)
+    stale_payload = version_payload(target)
+    pending = registry.execute(
+        action_request(
+            'target.version.create',
+            stale_payload,
+            dry_run=True,
+            idempotency_key='stale-after-preview',
+        )
+    )
+    created = confirmed_write(registry, 'target.version.create', stale_payload, 'create-target-v2')
+    assert created.ok
+
+    stale_confirmation = registry.execute(
+        action_request(
+            'target.version.create',
+            stale_payload,
+            request_id='req_stale_target_version_confirmed',
+            dry_run=False,
+            idempotency_key='stale-after-preview',
+            confirmation_token=pending.result.data['confirmation']['token'],
+        )
+    )
+    assert stale_confirmation.error.code == 'TARGET_VERSION_CONFLICT'
+    target_id = target.result.data['target']['target']['id']
+    assert len(list((tmp_path / 'projects' / project_id / 'targets' / target_id / 'versions').glob('*.json'))) == 2
+
+    stale = registry.execute(
+        action_request('target.version.create', stale_payload, dry_run=True, idempotency_key='stale-target-v3')
+    )
+    assert stale.error.code == 'TARGET_VERSION_CONFLICT'
+
+    no_credential = create_target(
+        registry,
+        project_id,
+        key='create-no-credential-target',
+        name='无鉴权对象',
+        connection={
+            'adapter': 'http_json',
+            'endpoint': 'http://127.0.0.1:8123/v1/invoke',
+            'input_field': 'input',
+            'output_path': 'output',
+        },
+    )
+    missing_reference = registry.execute(action_request(
+        'target.version.create',
+        version_payload(no_credential),
+        dry_run=True,
+        idempotency_key='missing-inherited-credential',
+    ))
+    assert missing_reference.error.code == 'TARGET_CREDENTIAL_REFERENCE_MISSING'
 
 
 def test_connection_check_preview_and_unconfirmed_request_never_call_target(tmp_path, monkeypatch):

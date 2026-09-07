@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowLeft, Box, KeyRound, LockKeyhole, RefreshCw, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, Box, GitBranchPlus, KeyRound, LockKeyhole, RefreshCw, ShieldAlert } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { getTarget, type TargetStatus } from '@/api/workbench'
 import { useLocale } from '@/contexts/LocaleContext'
@@ -11,6 +11,7 @@ import ErrorAlert from '@/components/ui/ErrorAlert'
 import Skeleton from '@/components/ui/Skeleton'
 import Tabs from '@/components/ui/Tabs'
 import TargetConnectionCheckPanel from '@/components/targets/TargetConnectionCheckPanel'
+import TargetVersionCreateDrawer from '@/components/targets/TargetVersionCreateDrawer'
 import {
   targetAdapterLabel,
   targetConnectionLabel,
@@ -84,6 +85,18 @@ export default function TargetDetailPage() {
     next.set('tab', 'versions')
     setSearchParams(next)
   }
+  const openVersionCreate = () => {
+    const next = new URLSearchParams(searchParams)
+    next.set('version', target.latest_version_id)
+    next.set('tab', 'versions')
+    next.set('newVersion', '1')
+    setSearchParams(next)
+  }
+  const closeVersionCreate = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete('newVersion')
+    setSearchParams(next, { replace: true })
+  }
 
   const overviewPanel = (
     <section className="mt-4 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)] sm:p-5" aria-labelledby="target-overview-heading">
@@ -107,14 +120,20 @@ export default function TargetDetailPage() {
 
   const versionsPanel = (
     <section className="mt-4 overflow-hidden rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-card)] shadow-[var(--shadow-sm)]" aria-labelledby="target-versions-heading">
-      <header className="border-b border-[var(--border)] px-4 py-4 sm:px-5"><h2 id="target-versions-heading" className="text-base font-semibold text-[var(--text)]">{t('targets.versionsTitle')}</h2></header>
+      <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
+        <div>
+          <h2 id="target-versions-heading" className="text-base font-semibold text-[var(--text)]">{t('targets.versionsTitle')}</h2>
+          <p className="mt-0.5 text-xs text-[var(--text-muted)]">{t('targets.versionIdentityDescription')}</p>
+        </div>
+        <Button variant="outline" onClick={openVersionCreate}><GitBranchPlus size={15} aria-hidden="true" />{t('targets.createVersionAction')}</Button>
+      </header>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="bg-[var(--bg-deep)] text-xs text-[var(--text-muted)]"><tr><th className="px-4 py-3 sm:pl-5">{t('targets.columnVersion')}</th><th className="px-4 py-3">{t('targets.providerLabel')}</th><th className="px-4 py-3">{t('targets.connectionStatus')}</th><th className="px-4 py-3">{t('targets.configHash')}</th><th className="px-4 py-3 sm:pr-5">{t('targets.createdAt')}</th></tr></thead>
           <tbody className="divide-y divide-[var(--border)]">
             {versions.map((item) => (
               <tr key={item.id} className={item.id === version.id ? 'bg-[var(--accent-dim)]' : 'hover:bg-[var(--bg-deep)]'}>
-                <td className="px-4 py-3 sm:pl-5"><button type="button" onClick={() => selectVersion(item.id)} className="font-medium text-[var(--accent)] hover:underline">{item.label} · #{item.version_number}</button></td>
+                <td className="px-4 py-3 sm:pl-5"><div className="flex items-center gap-2"><button type="button" onClick={() => selectVersion(item.id)} className="font-medium text-[var(--accent)] hover:underline">{item.label} · #{item.version_number}</button>{item.id === target.latest_version_id && <Badge variant="success">{t('targets.latestVersionBadge')}</Badge>}</div></td>
                 <td className="px-4 py-3 text-[var(--text-muted)]">{item.provider}</td>
                 <td className="px-4 py-3"><Badge variant={item.connection_status === 'passed' ? 'success' : item.connection_status === 'failed' ? 'danger' : 'warning'}>{targetConnectionLabel(t, item.connection_status)}</Badge></td>
                 <td className="px-4 py-3 font-mono text-xs text-[var(--text-muted)]"><span title={item.config_hash}>{item.config_hash.slice(0, 12)}…</span></td>
@@ -183,7 +202,7 @@ export default function TargetDetailPage() {
           <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] border border-[var(--border)] bg-[var(--bg-card)] text-[var(--accent)]"><Box size={19} aria-hidden="true" /></span><div className="min-w-0"><h1 className="truncate text-xl font-semibold tracking-[-0.02em] text-[var(--text)] sm:text-[22px]">{target.name}</h1><p className="mt-0.5 truncate font-mono text-xs text-[var(--text-dim)]">{target.id}</p></div></div>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--text-muted)]">{target.description || t('targets.noDescription')}</p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2"><Badge>{targetTypeLabel(t, target.type)}</Badge><Badge variant={statusVariant(target.status)}>{targetStatusLabel(t, target.status)}</Badge><Badge variant={version.connection_status === 'passed' ? 'success' : version.connection_status === 'failed' ? 'danger' : 'warning'}>{targetConnectionLabel(t, version.connection_status)}</Badge></div>
+        <div className="flex shrink-0 flex-wrap gap-2"><Badge>{targetTypeLabel(t, target.type)}</Badge><Badge>{version.label} · #{version.version_number}</Badge>{version.id === target.latest_version_id ? <Badge variant={statusVariant(target.status)}>{targetStatusLabel(t, target.status)}</Badge> : <Badge>{t('targets.historicalVersionBadge')}</Badge>}<Badge variant={version.connection_status === 'passed' ? 'success' : version.connection_status === 'failed' ? 'danger' : 'warning'}>{targetConnectionLabel(t, version.connection_status)}</Badge></div>
       </header>
 
       <Tabs
@@ -200,6 +219,20 @@ export default function TargetDetailPage() {
           'target-connection-panel': connectionPanel,
         }}
       />
+      {version.id === target.latest_version_id && searchParams.get('newVersion') === '1' && (
+        <TargetVersionCreateDrawer
+          open
+          detail={detail}
+          onClose={closeVersionCreate}
+          onCreated={(created) => {
+            const next = new URLSearchParams(searchParams)
+            next.set('version', created.version.id)
+            next.set('tab', 'versions')
+            next.delete('newVersion')
+            setSearchParams(next, { replace: true })
+          }}
+        />
+      )}
     </div>
   )
 }
