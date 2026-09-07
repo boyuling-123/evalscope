@@ -76,7 +76,19 @@ async function doFetch(url: string, init: RequestInit): Promise<Response> {
 async function ensureOk(res: Response): Promise<void> {
   if (res.ok) return
   const body = await res.json().catch(() => ({ error: res.statusText }))
-  const message: string = (body && typeof body.error === 'string' && body.error) || `HTTP ${res.status}`
+  const nestedMessage =
+    body &&
+    typeof body.error === 'object' &&
+    body.error !== null &&
+    'message' in body.error &&
+    typeof body.error.message === 'string'
+      ? body.error.message
+      : ''
+  const message: string =
+    (body && typeof body.error === 'string' && body.error) ||
+    nestedMessage ||
+    (body && typeof body.message === 'string' && body.message) ||
+    `HTTP ${res.status}`
   const kind = res.status >= 500 ? 'http-5xx' : 'http-4xx'
   throw new DomainError(kind, message, res.status)
 }

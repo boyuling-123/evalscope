@@ -20,6 +20,8 @@ import { resolveProvider } from '@/domain/perf/providerResolution'
 import { formatMetric } from '@/domain/metric'
 import { ExternalLink, Lightbulb } from 'lucide-react'
 import type { PerfDetailResponse } from '@/api/types'
+import { useParams } from 'react-router-dom'
+import { projectRouteOr } from '@/navigation/projectRoutes'
 
 type TabKey = 'overview' | 'charts' | 'runs'
 
@@ -88,6 +90,7 @@ function rowsToRecords(columns: SummaryColumn[], rows: SummaryRow[]): Record<str
 // ------------------------------------------------------------------ //
 export default function PerfReportDetailPage() {
   const { t } = useLocale()
+  const { projectId } = useParams()
   const { get } = useQueryParams()
   const { rootPath: ctxRoot } = useScan()
 
@@ -151,7 +154,10 @@ export default function PerfReportDetailPage() {
       <div className="page-enter flex flex-col gap-4">
         <Breadcrumb
           items={[
-            { label: t('nav.performance'), href: `/performance?root_path=${encodeURIComponent(rootPath)}` },
+            {
+              label: t('nav.runs'),
+              href: projectRouteOr(projectId, `/runs?view=performance&root_path=${encodeURIComponent(rootPath)}`, `/performance?root_path=${encodeURIComponent(rootPath)}`),
+            },
             { label: 'Detail' },
           ]}
         />
@@ -238,7 +244,10 @@ export default function PerfReportDetailPage() {
     <div className="page-enter flex flex-col gap-4">
       <Breadcrumb
         items={[
-          { label: t('nav.performance'), href: `/performance?root_path=${encodeURIComponent(rootPath)}` },
+          {
+            label: t('nav.runs'),
+            href: projectRouteOr(projectId, `/runs?view=performance&root_path=${encodeURIComponent(rootPath)}`, `/performance?root_path=${encodeURIComponent(rootPath)}`),
+          },
           { label: data.model },
         ]}
       />

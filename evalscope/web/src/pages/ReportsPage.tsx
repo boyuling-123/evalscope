@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLocale } from '@/contexts/LocaleContext'
 import { datasetLabel } from '@/domain/report/primaryMetrics'
 import { formatReportRef, parseReportRef, reportRefFromSummary } from '@/domain/report/reportRef'
@@ -25,6 +25,7 @@ import {
   addToSelection,
   preserveSelectionAcrossReorder,
 } from '@/domain/compare/selection'
+import { projectRouteOr } from '@/navigation/projectRoutes'
 
 const PAGE_SIZE = 20
 
@@ -43,6 +44,7 @@ const defaultFilters: ReportFilters = {
 export default function ReportsPage() {
   const { t } = useLocale()
   const navigate = useNavigate()
+  const { projectId } = useParams()
   const [searchParams] = useSearchParams()
 
   const { rootPath, scanToken, setRootPath } = useScan()
@@ -159,19 +161,23 @@ export default function ReportsPage() {
     (ref: string) => {
       const { runId, modelId } = parseReportRef(ref)
       navigate(
-        `/reports/${encodeURIComponent(runId)}/${encodeURIComponent(modelId)}?root_path=${encodeURIComponent(rootPath)}`,
+        projectRouteOr(
+          projectId,
+          `/runs/quality/${encodeURIComponent(runId)}/${encodeURIComponent(modelId)}?root_path=${encodeURIComponent(rootPath)}`,
+          `/reports/${encodeURIComponent(runId)}/${encodeURIComponent(modelId)}?root_path=${encodeURIComponent(rootPath)}`,
+        ),
       )
     },
-    [navigate, rootPath],
+    [navigate, projectId, rootPath],
   )
 
   const handleCompare = useCallback(() => {
     if (selectedForCompare.length >= 2) {
       const params = new URLSearchParams({ root_path: rootPath })
       for (const ref of selectedForCompare) params.append('report', ref)
-      navigate(`/compare?${params.toString()}`)
+      navigate(projectRouteOr(projectId, `/runs/compare?${params.toString()}`, `/compare?${params.toString()}`))
     }
-  }, [selectedForCompare, navigate, rootPath])
+  }, [selectedForCompare, navigate, projectId, rootPath])
 
   const handleViewHtml = useCallback(() => {
     if (selectedForCompare.length === 1) {

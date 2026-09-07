@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useLocale } from '@/contexts/LocaleContext'
 import {
-  overviewNavigation,
-  workbenchNavigation,
+  getOverviewNavigation,
+  getWorkbenchNavigation,
   type WorkbenchNavItem,
 } from '@/navigation/workbenchNavigation'
+import { isProjectId } from '@/navigation/projectRoutes'
+import ProjectSwitcher from './ProjectSwitcher'
 
 interface WorkbenchSidebarProps {
   collapsed: boolean
@@ -27,19 +29,16 @@ function Brand({ collapsed }: { collapsed: boolean }) {
 
   return (
     <NavLink
-      to="/dashboard"
+      to="/projects"
       end
       aria-label={t('nav.brand')}
-      className="coarse-target flex min-w-0 items-center gap-3 rounded-[var(--radius-sm)] px-2 py-1.5 text-[var(--text)]"
+      className="coarse-target flex min-w-0 items-center gap-2.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-[var(--text)]"
     >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[var(--accent)] text-sm font-bold text-[var(--text-on-filled)] shadow-[var(--shadow-glow-soft)]">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px] bg-[var(--accent)] text-xs font-bold text-[var(--text-on-filled)]">
         E
       </span>
       {!collapsed && (
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold tracking-tight">{t('nav.brand')}</span>
-          <span className="block truncate text-[11px] text-[var(--text-dim)]">{t('nav.brandTagline')}</span>
-        </span>
+        <span className="truncate text-sm font-semibold tracking-[-0.01em]">{t('nav.brand')}</span>
       )}
     </NavLink>
   )
@@ -64,7 +63,7 @@ function SidebarLink({ item, collapsed, onNavigate }: {
           collapsed ? 'justify-center px-2' : 'gap-3 px-3'
         } ${
           isActive
-            ? 'bg-[var(--accent-dim)] text-[var(--accent)]'
+            ? 'bg-[var(--bg-card2)] text-[var(--text)] shadow-[inset_2px_0_0_var(--accent)]'
             : 'text-[var(--text-muted)] hover:bg-[var(--bg-card2)] hover:text-[var(--text)]'
         }`
       }
@@ -82,10 +81,14 @@ function SidebarContent({
   onCloseMobile,
 }: SidebarContentProps) {
   const { t } = useLocale()
+  const { projectId } = useParams()
+  const hasProject = isProjectId(projectId)
+  const overviewNavigation = hasProject ? getOverviewNavigation(projectId) : null
+  const workbenchNavigation = hasProject ? getWorkbenchNavigation(projectId) : []
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className={`flex h-16 shrink-0 items-center border-b border-[var(--border)] ${collapsed ? 'justify-center px-2' : 'justify-between px-3'}`}>
+      <div className={`flex h-12 shrink-0 items-center border-b border-[var(--border)] ${collapsed ? 'justify-center px-2' : 'justify-between px-3'}`}>
         <Brand collapsed={collapsed} />
         {mobile && (
           <button
@@ -99,23 +102,29 @@ function SidebarContent({
         )}
       </div>
 
-      <nav aria-label={t('nav.primaryNavigation')} className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
-        <SidebarLink item={overviewNavigation} collapsed={collapsed} onNavigate={mobile ? onCloseMobile : undefined} />
+      <div className="shrink-0 border-b border-[var(--border)] py-2">
+        <ProjectSwitcher collapsed={collapsed} />
+      </div>
+
+      <nav aria-label={t('nav.primaryNavigation')} className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+        {overviewNavigation && (
+          <SidebarLink item={overviewNavigation} collapsed={collapsed} onNavigate={mobile ? onCloseMobile : undefined} />
+        )}
 
         {workbenchNavigation.map((group) => (
           <section
             key={group.key}
-            className="mt-6"
+            className="mt-5"
             aria-label={collapsed ? t(group.labelKey) : undefined}
             aria-labelledby={collapsed ? undefined : `nav-group-${group.key}${mobile ? '-mobile' : ''}`}
           >
             {!collapsed && (
-              <h2
+              <p
                 id={`nav-group-${group.key}${mobile ? '-mobile' : ''}`}
-                className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-dim)]"
+                className="mb-1.5 px-3 text-[11px] font-semibold tracking-[0.08em] text-[var(--text-dim)]"
               >
                 {t(group.labelKey)}
-              </h2>
+              </p>
             )}
             <div className="flex flex-col gap-1">
               {group.items.map((item) => (
@@ -132,12 +141,6 @@ function SidebarContent({
       </nav>
 
       <div className="shrink-0 border-t border-[var(--border)] p-2">
-        {!collapsed && (
-          <div className="mb-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-deep)] px-3 py-2">
-            <p className="text-xs font-medium text-[var(--text)]">{t('nav.localMode')}</p>
-            <p className="mt-0.5 text-[11px] leading-4 text-[var(--text-dim)]">{t('nav.localModeHint')}</p>
-          </div>
-        )}
         {!mobile && (
           <button
             type="button"
@@ -177,7 +180,7 @@ export default function WorkbenchSidebar({
     <>
       <aside
         className={`sticky top-0 hidden h-screen shrink-0 border-r border-[var(--border)] bg-[var(--bg-card)] transition-[width] duration-200 lg:block ${
-          collapsed ? 'w-[72px]' : 'w-[248px]'
+          collapsed ? 'w-[68px]' : 'w-[236px]'
         }`}
       >
         <SidebarContent

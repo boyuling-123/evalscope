@@ -36,6 +36,7 @@ import ReportsTable from './reports/ReportsTable'
 import WorkbenchSidebar from './nav/WorkbenchSidebar'
 import WorkbenchTopbar from './nav/WorkbenchTopbar'
 import { LocaleProvider } from '@/contexts/LocaleContext'
+import { ProjectProvider } from '@/contexts/ProjectContext'
 import type { ReportSummary } from '@/api/types'
 
 const FIXED_SYSTEM_TIME = new Date('2026-07-01T00:00:00.000Z')
@@ -66,7 +67,9 @@ function renderWithLocale(ui: React.ReactNode) {
 function renderWithRouter(ui: React.ReactNode) {
   return render(
     <LocaleProvider>
-      <MemoryRouter>{ui}</MemoryRouter>
+      <ProjectProvider>
+        <MemoryRouter>{ui}</MemoryRouter>
+      </ProjectProvider>
     </LocaleProvider>,
   )
 }

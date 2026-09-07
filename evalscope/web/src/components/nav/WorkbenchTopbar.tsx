@@ -1,7 +1,9 @@
-import { HardDrive, Menu } from 'lucide-react'
-import { useLocation } from 'react-router-dom'
+import { ChevronRight, HardDrive, Menu } from 'lucide-react'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { useLocale } from '@/contexts/LocaleContext'
+import { useProjects } from '@/contexts/ProjectContext'
 import { resolveWorkbenchPageMeta } from '@/navigation/workbenchNavigation'
+import { isProjectId, projectRoute } from '@/navigation/projectRoutes'
 import LocaleToggle from './LocaleToggle'
 import ThemeToggle from './ThemeToggle'
 
@@ -16,10 +18,15 @@ export default function WorkbenchTopbar({
 }: WorkbenchTopbarProps) {
   const { t } = useLocale()
   const { pathname } = useLocation()
+  const { projectId } = useParams()
+  const { projects } = useProjects()
   const pageMeta = resolveWorkbenchPageMeta(pathname)
+  const project = isProjectId(projectId)
+    ? projects.find((candidate) => candidate.id === projectId)
+    : undefined
 
   return (
-    <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface-glass)] px-4 backdrop-blur-xl sm:px-6">
+    <header className="sticky top-0 z-50 flex h-12 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface-glass)] px-3 backdrop-blur-xl sm:px-5">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
@@ -32,24 +39,31 @@ export default function WorkbenchTopbar({
           <Menu size={18} aria-hidden="true" />
         </button>
 
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--text-dim)]">
-            <HardDrive size={13} className="shrink-0" aria-hidden="true" />
-            <span className="truncate">{t('nav.localWorkspace')}</span>
-            {pageMeta && (
-              <>
-                <span aria-hidden="true">/</span>
-                <span className="truncate text-[var(--text-muted)]">{t(pageMeta.titleKey)}</span>
-              </>
-            )}
-          </div>
-          <p className="mt-0.5 truncate text-sm font-semibold text-[var(--text)]">{t('nav.workspaceName')}</p>
-        </div>
+        <nav aria-label={t('nav.breadcrumb')} className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)]">
+          <Link to="/projects" className="coarse-target truncate hover:text-[var(--text)]">{t('projects.title')}</Link>
+          {project && (
+            <>
+              <ChevronRight size={13} className="shrink-0 text-[var(--text-dim)]" aria-hidden="true" />
+              <Link
+                to={projectRoute(project.id)}
+                className="coarse-target max-w-44 truncate font-medium text-[var(--text)] hover:text-[var(--accent)]"
+              >
+                {project.name}
+              </Link>
+            </>
+          )}
+          {project && pageMeta && (
+            <>
+              <ChevronRight size={13} className="shrink-0 text-[var(--text-dim)]" aria-hidden="true" />
+              <span className="max-w-40 truncate">{t(pageMeta.titleKey)}</span>
+            </>
+          )}
+        </nav>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <div className="mr-1 hidden items-center gap-1.5 rounded-full border border-[var(--success-border)] bg-[var(--success-bg)] px-2.5 py-1 text-xs font-medium text-[var(--success)] sm:flex">
-          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+        <div className="mr-1 hidden items-center gap-1.5 rounded-[6px] px-2 py-1 text-xs font-medium text-[var(--text-muted)] sm:flex">
+          <HardDrive size={13} aria-hidden="true" />
           {t('nav.localMode')}
         </div>
         <LocaleToggle />

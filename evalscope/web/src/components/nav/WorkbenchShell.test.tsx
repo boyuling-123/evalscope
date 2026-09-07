@@ -1,24 +1,56 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { LocaleProvider } from '@/contexts/LocaleContext'
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext'
 import { useLocale } from '@/contexts/LocaleContext'
 import { lookupTranslation } from '@/i18n/translations'
 import {
-  overviewNavigation,
+  getOverviewNavigation,
+  getWorkbenchNavigation,
   resolveWorkbenchPageMeta,
-  workbenchNavigation,
   workbenchPageMetadata,
 } from '@/navigation/workbenchNavigation'
 import WorkbenchPageHeader from './WorkbenchPageHeader'
 import WorkbenchSidebar from './WorkbenchSidebar'
 
-function renderEnglish(ui: React.ReactNode, route = '/dashboard') {
+const PROJECT_ID = 'prj_aaaaaaaaaaaaaaaaaaaa'
+const SECOND_PROJECT_ID = 'prj_bbbbbbbbbbbbbbbbbbbb'
+
+vi.mock('@/contexts/ProjectContext', () => ({
+  useProjects: () => ({
+    projects: [{
+      schema_version: 1,
+      id: PROJECT_ID,
+      name: 'Regression project',
+      created_at: '2026-09-08T00:00:00Z',
+      updated_at: '2026-09-08T00:00:00Z',
+      archived: false,
+      root_path: '/tmp/regression-project',
+    }, {
+      schema_version: 1,
+      id: SECOND_PROJECT_ID,
+      name: 'Second project',
+      created_at: '2026-09-08T00:00:00Z',
+      updated_at: '2026-09-08T00:00:00Z',
+      archived: false,
+      root_path: '/tmp/second-project',
+    }],
+    loading: false,
+    error: '',
+    warnings: [],
+  }),
+}))
+
+function renderEnglish(ui: React.ReactNode, route = '/projects', routePattern = '*') {
   localStorage.removeItem('evalscope-locale')
   return render(
     <LocaleProvider defaultLocale="en">
-      <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
+      <MemoryRouter initialEntries={[route]}>
+        <Routes>
+          <Route path={routePattern} element={ui} />
+        </Routes>
+      </MemoryRouter>
     </LocaleProvider>,
   )
 }
@@ -37,6 +69,11 @@ function WorkspaceDefaultsProbe() {
   return <span>{`${locale}:${theme}`}</span>
 }
 
+function LocationProbe() {
+  const location = useLocation()
+  return <output>{`${location.pathname}${location.search}`}</output>
+}
+
 describe('Workbench navigation', () => {
   it('only exposes routes backed by working pages', () => {
     const { container } = renderEnglish(
@@ -46,10 +83,16 @@ describe('Workbench navigation', () => {
         onToggleCollapsed={() => {}}
         onCloseMobile={() => {}}
       />,
+      `/project/${PROJECT_ID}/dashboard`,
+      '/project/:projectId/*',
     )
 
     const paths = Array.from(container.querySelectorAll('nav a')).map((link) => link.getAttribute('href'))
-    expect(paths).toEqual(['/dashboard', '/tasks', '/reports', '/performance', '/benchmarks'])
+    expect(paths).toEqual([
+      `/project/${PROJECT_ID}/dashboard`,
+      `/project/${PROJECT_ID}/runs`,
+      `/project/${PROJECT_ID}/benchmarks`,
+    ])
     expect(paths).not.toContain('/traces')
     expect(paths).not.toContain('/datasets')
     expect(paths).not.toContain('/evaluators')
@@ -66,6 +109,8 @@ describe('Workbench navigation', () => {
         onToggleCollapsed={onToggleCollapsed}
         onCloseMobile={onCloseMobile}
       />,
+      `/project/${PROJECT_ID}/dashboard`,
+      '/project/:projectId/*',
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
@@ -74,28 +119,50 @@ describe('Workbench navigation', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onCloseMobile).toHaveBeenCalledOnce()
   })
+
+  it('preserves the current collection view when switching projects', () => {
+    renderEnglish(
+      <>
+        <WorkbenchSidebar
+          collapsed={false}
+          mobileOpen={false}
+          onToggleCollapsed={() => {}}
+          onCloseMobile={() => {}}
+        />
+        <LocationProbe />
+      </>,
+      `/project/${PROJECT_ID}/runs?view=performance`,
+      '/project/:projectId/*',
+    )
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Switch project' }), {
+      target: { value: SECOND_PROJECT_ID },
+    })
+
+    expect(screen.getByText(`/project/${SECOND_PROJECT_ID}/runs?view=performance`)).toBeInTheDocument()
+  })
 })
 
 describe('Workbench page hierarchy', () => {
   it('renders one consistent top-level heading for a list page', () => {
-    renderEnglish(<WorkbenchPageHeader />, '/reports')
+    renderEnglish(<WorkbenchPageHeader />, `/project/${PROJECT_ID}/runs`)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Evaluation results' })).toBeInTheDocument()
-    expect(screen.getByText('Evaluation')).toBeInTheDocument()
-    expect(screen.getByText(/individual cases/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Evaluation runs' })).toBeInTheDocument()
+    expect(screen.getByText(/quality and performance runs/i)).toBeInTheDocument()
+    expect(screen.queryByText('Evaluation', { selector: 'p' })).not.toBeInTheDocument()
   })
 
   it('keeps detail pages on their existing object heading', () => {
-    expect(resolveWorkbenchPageMeta('/reports/run/model')).toMatchObject({
-      titleKey: 'nav.evaluationDetail',
+    expect(resolveWorkbenchPageMeta(`/project/${PROJECT_ID}/runs/quality/run/model`)).toMatchObject({
+      titleKey: 'nav.runDetail',
       showPageHeader: false,
     })
   })
 
   it('defines translations for every navigation and page metadata key', () => {
     const keys = [
-      overviewNavigation.labelKey,
-      ...workbenchNavigation.flatMap((group) => [group.labelKey, ...group.items.map((item) => item.labelKey)]),
+      getOverviewNavigation(PROJECT_ID).labelKey,
+      ...getWorkbenchNavigation(PROJECT_ID).flatMap((group) => [group.labelKey, ...group.items.map((item) => item.labelKey)]),
       ...workbenchPageMetadata.flatMap((meta) => [meta.sectionKey, meta.titleKey, meta.descriptionKey].filter(Boolean)),
     ] as string[]
 

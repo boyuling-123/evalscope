@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { ExternalLink, ArrowLeft } from 'lucide-react'
 import { useLocale } from '@/contexts/LocaleContext'
 import Badge from '@/components/ui/Badge'
@@ -7,6 +7,7 @@ import { scoreColor } from '@/utils/colorScale'
 import { formatMetric, formatMetricLabel, getBoundedQualityRatio } from '@/domain/metric'
 import type { MetricSemantics } from '@/domain/metric'
 import { directionHintKey } from '@/domain/report/primaryMetrics'
+import { projectRouteOr } from '@/navigation/projectRoutes'
 
 interface Props {
   modelName: string
@@ -36,6 +37,7 @@ export default function ReportHeader({
 }: Props) {
   const { t } = useLocale()
   const navigate = useNavigate()
+  const { projectId } = useParams()
 
   const normalizedScore = getBoundedQualityRatio(score, semantics)
   const variant = normalizedScore == null
@@ -102,7 +104,10 @@ export default function ReportHeader({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => window.open(`/viewer?url=${encodeURIComponent(htmlReportUrl)}`, '_blank')}
+            onClick={() => window.open(
+              projectRouteOr(projectId, `/runs/viewer?url=${encodeURIComponent(htmlReportUrl)}`, `/viewer?url=${encodeURIComponent(htmlReportUrl)}`),
+              '_blank',
+            )}
           >
             <ExternalLink size={14} />
             {t('reportDetail.viewHtml')}

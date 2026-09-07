@@ -8,8 +8,10 @@ import ErrorBoundary from '@/components/common/ErrorBoundary'
 import { useScan } from '@/contexts/ReportsContext'
 import { useLocale } from '@/contexts/LocaleContext'
 
-// Result routes share a single global "scan this directory" control.
-const SCAN_ROUTES = new Set(['/dashboard', '/reports', '/performance'])
+// Project overview and run lists share the local output-directory control.
+function showsScanPath(pathname: string): boolean {
+  return /^\/project\/[^/]+\/(dashboard|runs)$/.test(pathname)
+}
 
 export default function MainLayout() {
   const location = useLocation()
@@ -45,7 +47,7 @@ export default function MainLayout() {
     }
   }, [location.pathname])
 
-  const showPathBar = SCAN_ROUTES.has(location.pathname)
+  const showPathBar = showsScanPath(location.pathname)
 
   return (
     <div className="workbench-canvas flex min-h-screen">
@@ -60,7 +62,7 @@ export default function MainLayout() {
           mobileNavigationOpen={mobileNavigationOpen}
           onOpenNavigation={() => setMobileNavigationOpen(true)}
         />
-        <main className="mx-auto flex w-full max-w-[1680px] flex-1 flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-4 px-4 py-4 sm:px-6 lg:px-7 lg:py-5">
           <WorkbenchPageHeader />
           {showPathBar && (
             <PathBar

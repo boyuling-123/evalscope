@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { compileFromFile } from 'json-schema-to-typescript'
+import { resolvePythonExecutable } from './pythonExecutable'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const webRoot = resolve(scriptDir, '..')
@@ -18,7 +19,7 @@ const schemaPath = resolve(tempRoot, 'contracts.schema.json')
 const typesPath = resolve(tempRoot, 'contracts.ts')
 
 function generateSchema(): void {
-  execFileSync(process.env.PYTHON || 'python', [
+  execFileSync(resolvePythonExecutable(repoRoot), [
     resolve(repoRoot, 'scripts/generate_web_api_contracts.py'),
     '--output',
     schemaPath,

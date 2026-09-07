@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight, Clock, Cpu, FileText, Gauge } from 'lucide-react'
 import { useScan } from '@/contexts/ReportsContext'
 import { useAsyncResource } from '@/hooks/useAsyncResource'
@@ -21,6 +21,7 @@ import { aggregateRuns } from '@/domain/report/runAggregation'
 import { parseReportRef } from '@/domain/report/reportRef'
 import type { AggregatedRow, CellKind, CellPoint } from '@/domain/report/runAggregation'
 import { formatTimestamp } from '@/utils/formatUtils'
+import { projectRouteOr } from '@/navigation/projectRoutes'
 
 /**
  * Which kinds of run the table shows.
@@ -54,6 +55,7 @@ export default function DashboardPage() {
   const { t } = useLocale()
   const { rootPath, scanToken } = useScan()
   const navigate = useNavigate()
+  const { projectId } = useParams()
 
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [query, setQuery] = useState('')
@@ -157,13 +159,13 @@ export default function DashboardPage() {
       icon: <FileText size={17} strokeWidth={2} />,
       value: String(kpi.evals),
       label: t('dashboard.totalEvaluations'),
-      onClick: () => navigate('/reports'),
+      onClick: () => navigate(projectRouteOr(projectId, '/runs', '/reports')),
     },
     {
       icon: <Gauge size={17} strokeWidth={2} />,
       value: String(kpi.perfs),
       label: t('dashboard.totalPerfRuns'),
-      onClick: () => navigate('/performance'),
+      onClick: () => navigate(projectRouteOr(projectId, '/runs?view=performance', '/performance')),
     },
     {
       icon: <Cpu size={17} strokeWidth={2} />,
@@ -176,7 +178,7 @@ export default function DashboardPage() {
       label: t('dashboard.latestRun'),
       title: kpi.latest ? formatTimestamp(kpi.latest, 'seconds') : undefined,
     },
-  ], [kpi, latestRunLabel, navigate, t])
+  ], [kpi, latestRunLabel, navigate, projectId, t])
 
   const recentChange = useMemo(() => {
     return visibleRows
@@ -199,10 +201,18 @@ export default function DashboardPage() {
     const root = encodeURIComponent(rootPath)
     if (row.cell.kind === 'eval') {
       const { runId, modelId } = parseReportRef(point.runId)
-      navigate(`/reports/${encodeURIComponent(runId)}/${encodeURIComponent(modelId)}?root_path=${root}`)
+      navigate(projectRouteOr(
+        projectId,
+        `/runs/quality/${encodeURIComponent(runId)}/${encodeURIComponent(modelId)}?root_path=${root}`,
+        `/reports/${encodeURIComponent(runId)}/${encodeURIComponent(modelId)}?root_path=${root}`,
+      ))
       return
     }
-    navigate(`/perf-report?path=${encodeURIComponent(point.runId)}&root_path=${root}`)
+    navigate(projectRouteOr(
+      projectId,
+      `/runs/performance/detail?path=${encodeURIComponent(point.runId)}&root_path=${root}`,
+      `/perf-report?path=${encodeURIComponent(point.runId)}&root_path=${root}`,
+    ))
   }
 
   const hasData = scanned && rows.length > 0

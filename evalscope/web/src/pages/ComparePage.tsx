@@ -30,6 +30,8 @@ import CompareReportRail from '@/components/compare/CompareReportRail'
 import ScoreMatrixTab from '@/components/compare/ScoreMatrixTab'
 import PredictionCompareTab from '@/components/compare/PredictionCompareTab'
 import type { MergedPrediction, PerModelFilter } from '@/components/compare/compareSlots'
+import { useParams } from 'react-router-dom'
+import { projectRouteOr } from '@/navigation/projectRoutes'
 
 // ------------------------------------------------------------------ //
 // Types                                                               //
@@ -45,6 +47,7 @@ const EMPTY_MERGED: MergedPrediction[] = []
 
 export default function ComparePage() {
   const { t } = useLocale()
+  const { projectId } = useParams()
   const qp = useQueryParams()
   const { rootPath: ctxRootPath, setRootPath } = useScan()
   const { loadMultiReports, loading, reportCache } = useReportCache()
@@ -366,7 +369,10 @@ export default function ComparePage() {
   if (reportNames.length < 2) {
     return (
       <div className="page-enter">
-        <Breadcrumb items={[{ label: t('reports.title'), href: '/reports' }, { label: t('compare.title') }]} />
+        <Breadcrumb items={[
+          { label: t('nav.runs'), href: projectRouteOr(projectId, '/runs', '/reports') },
+          { label: t('compare.title') },
+        ]} />
         <div className="flex flex-col items-center justify-center gap-4 py-20">
           {/* text-dim allowed: empty-state alert icon (DESIGN.md §Text) */}
           <AlertCircle size={48} className="text-[var(--text-dim)]" />
@@ -378,7 +384,10 @@ export default function ComparePage() {
 
   return (
     <div className="page-enter mx-auto flex w-full max-w-[1600px] flex-col gap-5">
-      <Breadcrumb items={[{ label: t('reports.title'), href: '/reports' }, { label: t('compare.title') }]} />
+      <Breadcrumb items={[
+        { label: t('nav.runs'), href: projectRouteOr(projectId, '/runs', '/reports') },
+        { label: t('compare.title') },
+      ]} />
 
       <div className="grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <CompareReportRail
