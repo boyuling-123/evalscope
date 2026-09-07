@@ -47,6 +47,7 @@ def test_discovery_only_exposes_registered_actions(tmp_path):
         'target.create',
         'target.get',
         'target.list',
+        'target.version.create',
     }
     assert all(item['next_action'] in names for item in actions if item.get('next_action'))
     assert 'dataset.inspect' not in json.dumps(response.model_dump(mode='json'), ensure_ascii=False)

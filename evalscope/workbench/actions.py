@@ -30,6 +30,7 @@ from .targets import (
     TargetListPayload,
     TargetStore,
     TargetSummary,
+    TargetVersionCreatePayload,
 )
 
 logger = get_logger()
@@ -249,6 +250,7 @@ def action_http_status(response: ActionResponse) -> int:
         return 404
     if code in {
         'IDEMPOTENCY_CONFLICT',
+        'TARGET_VERSION_CONFLICT',
         'CONFIRMATION_REQUIRED',
         'CONFIRMATION_INVALID',
         'CONFIRMATION_ALREADY_USED',
@@ -393,6 +395,70 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             verdict='completed',
             data={'target': public_target_detail(detail)},
             next_action='target.list',
+        )
+
+    def create_target_version(
+        payload: TargetVersionCreatePayload,
+        context: ActionExecutionContext,
+    ) -> HandlerResult:
+        base = targets.get(
+            TargetGetPayload(
+                project_id=payload.project_id,
+                target_id=payload.target_id,
+                version_id=payload.base_version_id,
+            )
+        )
+        if base.target.latest_version_id != payload.base_version_id:
+            raise WorkbenchActionError(
+                code='TARGET_VERSION_CONFLICT',
+                message='对象已有更新版本，请刷新页面后基于最新版重新创建。',
+                status_code=409,
+                details={
+                    'target_id': payload.target_id,
+                    'expected_base_version_id': base.target.latest_version_id,
+                },
+            )
+        if payload.reuse_base_credential and base.version.connection.credential_ref is None:
+            raise WorkbenchActionError(
+                code='TARGET_CREDENTIAL_REFERENCE_MISSING',
+                message='基线版本没有可沿用的服务端凭据引用，请改为提供新引用或不使用鉴权。',
+            )
+        if context.request.dry_run:
+            return HandlerResult(
+                verdict='ready',
+                data={
+                    'preview': {
+                        'project_id': payload.project_id,
+                        'target_id': payload.target_id,
+                        'base_version_id': payload.base_version_id,
+                        'next_version_number': max(item.version_number for item in base.versions) + 1,
+                        'version_label': payload.version_label,
+                        'adapter': payload.connection.adapter,
+                        'credential_configured': (
+                            payload.connection.credential_ref is not None
+                            or (payload.reuse_base_credential and base.version.connection.credential_ref is not None)
+                        ),
+                        'reuses_server_credential': payload.reuse_base_credential,
+                        'initial_status': 'draft',
+                        'connection_status': 'untested',
+                        'writes': ['versions/<version_id>.json', 'target.json'],
+                        'starts_connection_test': False,
+                    }
+                },
+                next_action='target.version.create',
+                warnings=('新版本不会继承旧版本的试调状态，也不会自动发起模型调用。',),
+            )
+        if context.operation_id is None:
+            raise WorkbenchActionError(
+                code='IDEMPOTENCY_KEY_REQUIRED',
+                message='创建对象版本需要幂等键。',
+            )
+        detail = targets.create_version(payload, context.operation_id)
+        return HandlerResult(
+            verdict='completed',
+            data={'target': public_target_detail(detail)},
+            next_action='target.connection.check',
+            warnings=('新版本已保存为未试调草稿；旧版本及其试调结果保持不变。',),
         )
 
     def check_target_connection(
@@ -604,6 +670,23 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             ),
             TargetListPayload,
             list_targets,
+        ),
+        (
+            ActionDescriptor(
+                name='target.version.create',
+                version='1.0',
+                access='write',
+                description='基于当前最新版创建新的不可变 TargetVersion；不会覆盖旧版本或自动试调。',
+                when_to_use='用户确认新的接口、模型、Prompt、Tool 或 Skill 运行绑定后保存新版本时调用。',
+                prerequisites=['有效 project_id、target_id 与最新 base_version_id', '正式写入前完成 dry_run 确认'],
+                next_action='target.connection.check',
+                supports_dry_run=True,
+                requires_idempotency=True,
+                requires_confirmation=True,
+                input_schema=TargetVersionCreatePayload.model_json_schema(),
+            ),
+            TargetVersionCreatePayload,
+            create_target_version,
         ),
     ]
     for descriptor, payload_model, handler in definitions:

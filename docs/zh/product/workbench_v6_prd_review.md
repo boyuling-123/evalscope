@@ -25,13 +25,13 @@
 
 | 能力 | 当前状态 | 代码或验收证据 | 下一步 |
 | --- | --- | --- | --- |
-| 统一 Action Registry | 已验证 | `evalscope/workbench` 与 8 个 Action 契约测试 | 所有后续写操作复用 |
+| 统一 Action Registry | 已验证 | `evalscope/workbench` 与 9 个 Action 契约测试 | 所有后续写操作复用 |
 | 项目查询、预览与确认创建 | 已验证 | `project.list/get/create`；浏览器完成真实创建 | 增加归档与导入导出 |
 | 项目级路由与切换 | 已验证 | `/project/:projectId/*`；桌面与 390px 验收 | 后续对象页复用同一路由约束 |
 | 中文紧凑页面壳层 | 已验证 | 左侧导航、路径栏、唯一 H1、主动作 | 后续页面复用同一壳层 |
 | 项目级运行数据隔离 | 已验证 | 项目独立 `runs_path`；任务、进度、日志与报告按 `project_id` 解析 | Target、Dataset 与 Evaluator 延续相同边界 |
 | 质量评测与性能压测入口 | 部分实现 | 现有任务和报告页已绑定项目运行目录 | 收敛为统一 Run Spec 与运行详情 |
-| 评测对象 | 部分实现 | `target.list/get/create/connection.check`；项目级列表、详情、草稿接入与显式确认试调 | P0 增加后续不可变版本并让 Run 锁定版本 |
+| 评测对象 | 部分实现 | `target.list/get/create/version.create/connection.check`；项目级列表、版本详情、并发保护、草稿接入与显式确认试调 | P0 让 Run 锁定精确版本 |
 | 数据集版本 | 未实现 | 仅有运行时数据集配置 | P0 新建不可变版本对象 |
 | 评估器版本 | 未实现 | EvalScope Evaluator 可执行，但无产品生命周期 | P0 新建 Action 与页面 |
 | Trace 管理 | 部分实现 | EvalScope 有 Agent Trace 组件 | P1 建立外部 Trace 关联和列表 |
@@ -73,6 +73,14 @@
 - 只有真实试调通过才会将当前最新对象提升为 `ready`；试调失败则标记为 `unavailable`，不进入正式候选池。
 - 测试使用进程内 Mock 与本机临时 HTTP 服务，覆盖非法 JSON、未确认、阻断适配器、失败返回、字段映射、凭据注入、幂等重放和不落盘；没有调用付费模型。
 
+### Target 后续版本基线
+
+- `target.version.create` 只能基于当前 `latest_version_id` 创建后续版本；过期页面会收到冲突响应并要求刷新，不会静默覆盖其他人的新版本。
+- 新版本记录 `based_on_version_id` 和递增版本号，写入独立文件；旧版本文件、连接状态和试调证据保持字节级不变。
+- 新版本固定回到 `draft / untested`，即使基线版本已经调通，也必须针对新版本重新执行一次真实试调才能进入正式候选池。
+- 浏览器可以请求沿用基线版本的服务端凭据，但只发送“沿用”布尔意图；凭据引用名和值均不会回传前端或进入 Action 响应。
+- 版本标签页提供预填的新版本抽屉，先预览版本来源、目标版本号、写入文件和试调边界，再经过确认 token 与幂等键完成写入。
+
 ## 已锁定的前端取舍
 
 - 未实现页面必须隐藏入口，不展示“即将上线”的空壳导航。
@@ -88,10 +96,11 @@
 2. 已完成：建立项目隔离的 Target Action 与不可变首版本，先覆盖 HTTP API 和已有 EvalScope 模型配置。
 3. 已完成：实现 Langfuse 式 Target 列表、对象详情与三步草稿接入向导，未实现导入方式均明确标注为“设计中”。
 4. 已完成：增加本地 Mock 连接验收、显式双阶段确认的真实试调 Action，以及脱敏试调结果。
-5. 当前 Ready：建立后续不可变 TargetVersion，并让 Run 锁定精确版本。
-6. 建立不可变 DatasetVersion 与字段映射预览，复用既有导入 Skill 的确认规则。
-7. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
-8. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。
-9. 在稳定 Action 上增加 MCP 适配器和全局评测助手，最后再进入 Prompt／Skill 优化飞轮。
+5. 已完成：建立后续不可变 TargetVersion、版本来源、并发冲突保护与受控版本创建界面。
+6. 当前 Ready：让 Run Spec 锁定精确 TargetVersion，并在创建与详情页展示锁定证据。
+7. 建立不可变 DatasetVersion 与字段映射预览，复用既有导入 Skill 的确认规则。
+8. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
+9. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。
+10. 在稳定 Action 上增加 MCP 适配器和全局评测助手，最后再进入 Prompt／Skill 优化飞轮。
 
 每一轮都必须经过真实源文件测试、异常路径、构建、桌面和窄屏浏览器验收、文档更新、密钥扫描后，才能提交和合并。
