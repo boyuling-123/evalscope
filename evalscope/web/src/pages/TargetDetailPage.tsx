@@ -10,6 +10,7 @@ import Button from '@/components/ui/Button'
 import ErrorAlert from '@/components/ui/ErrorAlert'
 import Skeleton from '@/components/ui/Skeleton'
 import Tabs from '@/components/ui/Tabs'
+import TargetConnectionCheckPanel from '@/components/targets/TargetConnectionCheckPanel'
 import {
   targetAdapterLabel,
   targetConnectionLabel,
@@ -128,19 +129,27 @@ export default function TargetDetailPage() {
 
   const connectionPanel = (
     <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <section className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)] sm:p-5" aria-labelledby="target-connection-heading">
-        <h2 id="target-connection-heading" className="text-base font-semibold text-[var(--text)]">{t('targets.connectionTitle')}</h2>
-        <dl className="mt-3">
-          <DefinitionItem label={t('targets.adapterLabel')}>{targetAdapterLabel(t, version.connection.adapter)}</DefinitionItem>
-          <DefinitionItem label={t('targets.endpoint')} mono>{version.connection.endpoint || '—'}</DefinitionItem>
-          <DefinitionItem label={t('targets.modelId')} mono>{version.connection.model_id || '—'}</DefinitionItem>
-          <DefinitionItem label={t('targets.method')} mono>{version.connection.method}</DefinitionItem>
-          <DefinitionItem label={t('targets.inputField')} mono>{version.connection.input_field}</DefinitionItem>
-          <DefinitionItem label={t('targets.outputPath')} mono>{version.connection.output_path}</DefinitionItem>
-          <DefinitionItem label={t('targets.timeout')}>{t('targets.seconds', { count: version.connection.timeout_seconds })}</DefinitionItem>
-          <DefinitionItem label={t('targets.credential')}><span className="inline-flex items-center gap-2"><KeyRound size={14} className="text-[var(--text-dim)]" aria-hidden="true" />{version.connection.credential_configured ? t('targets.credentialConfigured') : t('targets.credentialMissing')}</span></DefinitionItem>
-        </dl>
-      </section>
+      <div className="space-y-4">
+        <section className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)] sm:p-5" aria-labelledby="target-connection-heading">
+          <h2 id="target-connection-heading" className="text-base font-semibold text-[var(--text)]">{t('targets.connectionTitle')}</h2>
+          <dl className="mt-3">
+            <DefinitionItem label={t('targets.adapterLabel')}>{targetAdapterLabel(t, version.connection.adapter)}</DefinitionItem>
+            <DefinitionItem label={t('targets.endpoint')} mono>{version.connection.endpoint || '—'}</DefinitionItem>
+            <DefinitionItem label={t('targets.modelId')} mono>{version.connection.model_id || '—'}</DefinitionItem>
+            <DefinitionItem label={t('targets.method')} mono>{version.connection.method}</DefinitionItem>
+            <DefinitionItem label={t('targets.inputField')} mono>{version.connection.input_field}</DefinitionItem>
+            <DefinitionItem label={t('targets.outputPath')} mono>{version.connection.output_path}</DefinitionItem>
+            <DefinitionItem label={t('targets.timeout')}>{t('targets.seconds', { count: version.connection.timeout_seconds })}</DefinitionItem>
+            <DefinitionItem label={t('targets.credential')}><span className="inline-flex items-center gap-2"><KeyRound size={14} className="text-[var(--text-dim)]" aria-hidden="true" />{version.connection.credential_configured ? t('targets.credentialConfigured') : t('targets.credentialMissing')}</span></DefinitionItem>
+          </dl>
+        </section>
+        <TargetConnectionCheckPanel
+          projectId={validProjectId}
+          targetId={target.id}
+          version={version}
+          onCompleted={resource.reload}
+        />
+      </div>
       <div className="space-y-4">
         {version.connection.adapter !== 'evalscope_model' && (
           <aside className="rounded-[var(--radius)] border border-[var(--warning-border)] bg-[var(--warning-bg)] p-4 text-sm text-[var(--warning-text)]">

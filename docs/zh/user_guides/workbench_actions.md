@@ -13,8 +13,9 @@
 | `target.list` | 只读 | 查询指定项目的评测对象，可按类型和状态过滤 |
 | `target.get` | 只读 | 读取指定对象及版本，不返回凭据引用内容 |
 | `target.create` | 写入 | 创建 Target 与不可变首版本；必须先 `dry_run` 确认，不自动试调 |
+| `target.connection.check` | 写入／外部请求 | 预览后向指定版本发送一次真实试调，只保存脱敏结果 |
 
-尚未实现的数据集、评估器、Run 与 MCP Action 不会出现在发现结果中。新建 Target 固定保存为 `draft / untested`，只有后续真实试调成功后才能进入正式候选池。
+尚未实现的数据集、评估器、Run 与 MCP Action 不会出现在发现结果中。新建 Target 固定保存为 `draft / untested`，只有 `target.connection.check` 的真实试调成功后才能进入正式候选池。
 
 ## HTTP 入口
 
@@ -51,11 +52,18 @@ evalscope service --outputs ./outputs --workspace ./my-workbench
 ```text
 projects/<project_id>/targets/<target_id>/target.json
 projects/<project_id>/targets/<target_id>/versions/<version_id>.json
+projects/<project_id>/targets/<target_id>/connection_checks/<check_id>.json
 ```
 
 对象版本冻结 Provider、输入输出模态、接口适配器、字段映射和超时时间。Skill 还必须冻结宿主运行时、模型参数引用、Tool 契约、加载方式与输入预处理。鉴权只接受 `env:VARIABLE` 或 `keychain:service/item` 引用；Action 返回值不会把引用名称写入前端状态。
 
-Web 工作台的“评测对象”页面直接使用以上三个 Target Action。接入流程会先调用 `target.create` 的 `dry_run`，用户在确认页检查写入范围后才提交正式写入；该流程只保存未试调草稿，不会触发模型调用。对象详情只展示凭据是否已配置，不展示引用名称或原始值。
+Web 工作台的“评测对象”页面直接使用以上四个 Target Action。接入流程会先调用 `target.create` 的 `dry_run`，用户在确认页检查写入范围后才提交正式写入；该流程只保存未试调草稿，不会触发模型调用。对象详情只展示凭据是否已配置，不展示引用名称或原始值。
+
+## 真实连接试调
+
+`target.connection.check` 是有外部副作用的写 Action。调用方必须先使用同一份 `project_id`、`target_id`、`version_id` 和 `sample_input` 执行 `dry_run`，然后将预览返回的确认 token 和稳定幂等键用于正式调用。预览阶段不解析凭据、不联网，也不写入试调记录。
+
+正式调用只向已保存的精确 Endpoint 发送一次 POST，不跟随重定向、不使用系统代理。远程响应上限为 1 MiB，输入上限为 64 KiB JSON。记录只包含状态、耗时、HTTP 状态码、输出类型、输出哈希或错误代码；不包含样例正文、完整输出、凭据引用名或凭据值。相同幂等键和相同参数的重放会返回已有结果，不会再次发送请求。
 
 ## 项目级运行隔离
 

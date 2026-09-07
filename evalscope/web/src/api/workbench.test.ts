@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  confirmTargetConnectionCheck,
   confirmTargetCreate,
   confirmProjectCreate,
   getTarget,
   listTargets,
   listProjects,
   previewProjectCreate,
+  previewTargetConnectionCheck,
   previewTargetCreate,
   type ProjectRecord,
   type TargetCreateInput,
+  type TargetConnectionCheck,
   type TargetDetail,
 } from './workbench'
 
@@ -94,16 +97,32 @@ const TARGET_DETAIL: TargetDetail = {
   }],
 }
 
-function actionResponse(data: unknown) {
+const TARGET_CHECK: TargetConnectionCheck = {
+  schema_version: 1,
+  id: 'tcc_0123456789abcdefabcd',
+  target_id: TARGET_DETAIL.target.id,
+  version_id: TARGET_DETAIL.version.id,
+  status: 'passed',
+  checked_at: '2026-09-08T02:00:00Z',
+  duration_ms: 18,
+  http_status: 200,
+  output_type: 'string',
+  output_hash: 'b'.repeat(64),
+}
+
+function actionResponse(
+  data: unknown,
+  options: { verdict?: 'ready' | 'completed' | 'blocked'; blockingReasons?: string[]; warnings?: string[] } = {},
+) {
   return {
     ok: true,
     request_id: 'req_test',
     result: {
-      verdict: 'completed',
-      blocking_reasons: [],
+      verdict: options.verdict ?? 'completed',
+      blocking_reasons: options.blockingReasons ?? [],
       data,
     },
-    warnings: [],
+    warnings: options.warnings ?? [],
   }
 }
 
@@ -235,6 +254,69 @@ describe('workbench Action client', () => {
       dry_run: false,
       confirmation_token: 'confirm_target',
       idempotency_key: 'create-target-test',
+    })
+  })
+
+  it('previews and confirms exactly one real target connection request', async () => {
+    const sampleInput = { question: '退款多久到账？' }
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => actionResponse({
+          preview: {
+            project_id: PROJECT.id,
+            target_id: TARGET_DETAIL.target.id,
+            version_id: TARGET_DETAIL.version.id,
+            adapter: 'openai_responses',
+            endpoint_origin: 'http://127.0.0.1:9000',
+            credential_configured: true,
+            starts_external_call: true,
+            may_consume_model_quota: true,
+            persists_sample_input: false,
+            persists_full_output: false,
+          },
+          confirmation: { token: 'confirm_connection', expires_at: '2026-09-08T02:10:00Z' },
+        }, { verdict: 'ready', warnings: ['预览不会联网。'] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => actionResponse({ check: TARGET_CHECK, target: TARGET_DETAIL }, { warnings: ['真实试调成功。'] }),
+      } as Response)
+
+    const preview = await previewTargetConnectionCheck(
+      PROJECT.id,
+      TARGET_DETAIL.target.id,
+      TARGET_DETAIL.version.id,
+      sampleInput,
+    )
+    expect(preview).toMatchObject({
+      verdict: 'ready',
+      blockingReasons: [],
+      warnings: ['预览不会联网。'],
+      confirmation: { token: 'confirm_connection' },
+    })
+
+    await expect(confirmTargetConnectionCheck(
+      PROJECT.id,
+      TARGET_DETAIL.target.id,
+      TARGET_DETAIL.version.id,
+      sampleInput,
+      'confirm_connection',
+      'check-target-test',
+    )).resolves.toEqual({ check: TARGET_CHECK, target: TARGET_DETAIL, warnings: ['真实试调成功。'] })
+
+    const previewBody = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    const confirmBody = JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))
+    expect(previewBody).toMatchObject({
+      action: 'target.connection.check',
+      dry_run: true,
+      payload: { project_id: PROJECT.id, version_id: TARGET_DETAIL.version.id, sample_input: sampleInput },
+    })
+    expect(confirmBody).toMatchObject({
+      action: 'target.connection.check',
+      dry_run: false,
+      confirmation_token: 'confirm_connection',
+      idempotency_key: 'check-target-test',
     })
   })
 })
