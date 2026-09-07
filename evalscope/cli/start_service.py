@@ -20,6 +20,14 @@ def existing_directory(value: str) -> str:
     return path
 
 
+def existing_workspace_directory(value: str) -> str:
+    """Return an existing workbench root or produce an argparse error."""
+    path = os.path.abspath(value)
+    if not os.path.isdir(path):
+        raise ArgumentTypeError(f'workspace directory does not exist: {path}')
+    return path
+
+
 class ServiceCMD(CLICommand):
     name = 'service'
 
@@ -41,6 +49,13 @@ class ServiceCMD(CLICommand):
             help='Root directory for evaluation outputs (default: ./outputs). '
             'The web dashboard will use this as the default scan path.',
         )
+        parser.add_argument(
+            '--workspace',
+            type=existing_workspace_directory,
+            default=None,
+            help='Existing directory for portable workbench projects and Action state. '
+            'Defaults to <outputs>/.evalscope-workbench.',
+        )
         parser.add_argument('--debug', action='store_true', default=False, help='Enable Flask debug mode')
         parser.set_defaults(func=subparser_func)
 
@@ -48,4 +63,10 @@ class ServiceCMD(CLICommand):
         """Execute the service command."""
         from evalscope.service import run_service
 
-        run_service(host=self.args.host, port=self.args.port, debug=self.args.debug, outputs=self.args.outputs)
+        run_service(
+            host=self.args.host,
+            port=self.args.port,
+            debug=self.args.debug,
+            outputs=self.args.outputs,
+            workspace=self.args.workspace,
+        )

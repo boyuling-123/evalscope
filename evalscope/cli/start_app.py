@@ -8,6 +8,7 @@ import warnings
 from argparse import ArgumentParser
 
 from evalscope.cli.base import CLICommand
+from evalscope.cli.start_service import existing_workspace_directory
 
 
 def subparser_func(args):
@@ -33,6 +34,12 @@ class StartAppCMD(CLICommand):
         parser.add_argument(
             '--outputs', type=str, default=None, help='Root directory for evaluation outputs (default: ./outputs)'
         )
+        parser.add_argument(
+            '--workspace',
+            type=existing_workspace_directory,
+            default=None,
+            help='Existing directory for portable workbench projects',
+        )
         parser.add_argument('--debug', action='store_true', default=False, help='Enable debug mode')
         parser.set_defaults(func=subparser_func)
 
@@ -45,4 +52,10 @@ class StartAppCMD(CLICommand):
         )
         from evalscope.service import run_service
 
-        run_service(host=self.args.host, port=self.args.port, debug=self.args.debug, outputs=self.args.outputs)
+        run_service(
+            host=self.args.host,
+            port=self.args.port,
+            debug=self.args.debug,
+            outputs=self.args.outputs,
+            workspace=self.args.workspace,
+        )

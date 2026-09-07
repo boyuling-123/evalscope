@@ -5,6 +5,7 @@ on:
     paths:
       - 'evalscope/web/**'
       - 'evalscope/service/**'
+      - 'evalscope/workbench/**'
       - 'evalscope/report/report.py'
       - 'evalscope/api/agent/trace.py'
       - 'evalscope/api/metric/**'
@@ -13,6 +14,8 @@ on:
       - 'scripts/generate_web_api_contracts.py'
       - 'tests/service/test_api_contracts.py'
       - 'tests/service/test_bootstrap.py'
+      - 'tests/service/test_workbench_actions.py'
+      - 'tests/workbench/**'
       - 'tests/report/test_report_endpoints.py'
       - 'requirements/dev.txt'
       - 'requirements/service.txt'
@@ -25,6 +28,7 @@ on:
     paths:
       - 'evalscope/web/**'
       - 'evalscope/service/**'
+      - 'evalscope/workbench/**'
       - 'evalscope/report/report.py'
       - 'evalscope/api/agent/trace.py'
       - 'evalscope/api/metric/**'
@@ -33,6 +37,8 @@ on:
       - 'scripts/generate_web_api_contracts.py'
       - 'tests/service/test_api_contracts.py'
       - 'tests/service/test_bootstrap.py'
+      - 'tests/service/test_workbench_actions.py'
+      - 'tests/workbench/**'
       - 'tests/report/test_report_endpoints.py'
       - 'requirements/dev.txt'
       - 'requirements/service.txt'
@@ -66,7 +72,13 @@ jobs:
         working-directory: evalscope/web
       - run: npm run contracts:check
         working-directory: evalscope/web
-      - run: python -m pytest tests/service/test_bootstrap.py tests/service/test_api_contracts.py tests/report/test_report_endpoints.py
+      - run: >-
+          python -m pytest
+          tests/workbench
+          tests/service/test_bootstrap.py
+          tests/service/test_api_contracts.py
+          tests/service/test_workbench_actions.py
+          tests/report/test_report_endpoints.py
       - run: npm run lint
         working-directory: evalscope/web
       - run: npm test
