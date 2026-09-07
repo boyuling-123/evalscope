@@ -38,7 +38,15 @@ def test_discovery_only_exposes_registered_actions(tmp_path):
     assert response.ok
     actions = response.result.data['actions']
     names = {item['name'] for item in actions}
-    assert names == {'capabilities.discover', 'project.create', 'project.get', 'project.list'}
+    assert names == {
+        'capabilities.discover',
+        'project.create',
+        'project.get',
+        'project.list',
+        'target.create',
+        'target.get',
+        'target.list',
+    }
     assert all(item['next_action'] in names for item in actions if item.get('next_action'))
     assert 'dataset.inspect' not in json.dumps(response.model_dump(mode='json'), ensure_ascii=False)
 

@@ -10,8 +10,11 @@
 | `project.list` | 只读 | 查询本地项目 |
 | `project.get` | 只读 | 按稳定 ID 读取项目 |
 | `project.create` | 写入 | 创建可迁移的 `project.json`；必须先 `dry_run` 确认 |
+| `target.list` | 只读 | 查询指定项目的评测对象，可按类型和状态过滤 |
+| `target.get` | 只读 | 读取指定对象及版本，不返回凭据引用内容 |
+| `target.create` | 写入 | 创建 Target 与不可变首版本；必须先 `dry_run` 确认，不自动试调 |
 
-尚未实现的数据集、评估器、Run 与 MCP Action 不会出现在发现结果中。
+尚未实现的数据集、评估器、Run 与 MCP Action 不会出现在发现结果中。新建 Target 固定保存为 `draft / untested`，只有后续真实试调成功后才能进入正式候选池。
 
 ## HTTP 入口
 
@@ -42,6 +45,15 @@ evalscope service --outputs ./outputs --workspace ./my-workbench
 ```
 
 项目清单保存在 `projects/<project_id>/project.json`，项目运行产物保存在 `projects/<project_id>/runs/`。Action 审计保存在 `audit/events.jsonl`，幂等结果保存在 `.action-state/idempotency/`。这些文件使用开放 JSON／JSONL 格式；浏览器不保存大规模业务真值。
+
+评测对象清单和版本分别保存在：
+
+```text
+projects/<project_id>/targets/<target_id>/target.json
+projects/<project_id>/targets/<target_id>/versions/<version_id>.json
+```
+
+对象版本冻结 Provider、输入输出模态、接口适配器、字段映射和超时时间。Skill 还必须冻结宿主运行时、模型参数引用、Tool 契约、加载方式与输入预处理。鉴权只接受 `env:VARIABLE` 或 `keychain:service/item` 引用；Action 返回值不会把引用名称写入前端状态。
 
 ## 项目级运行隔离
 
