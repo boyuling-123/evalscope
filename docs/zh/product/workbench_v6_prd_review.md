@@ -25,13 +25,13 @@
 
 | 能力 | 当前状态 | 代码或验收证据 | 下一步 |
 | --- | --- | --- | --- |
-| 统一 Action Registry | 已验证 | `evalscope/workbench` 与 Action 契约测试 | 所有后续写操作复用 |
+| 统一 Action Registry | 已验证 | `evalscope/workbench` 与 7 个 Action 契约测试 | 所有后续写操作复用 |
 | 项目查询、预览与确认创建 | 已验证 | `project.list/get/create`；浏览器完成真实创建 | 增加归档与导入导出 |
 | 项目级路由与切换 | 已验证 | `/project/:projectId/*`；桌面与 390px 验收 | 后续对象页复用同一路由约束 |
 | 中文紧凑页面壳层 | 已验证 | 左侧导航、路径栏、唯一 H1、主动作 | 后续页面复用同一壳层 |
 | 项目级运行数据隔离 | 已验证 | 项目独立 `runs_path`；任务、进度、日志与报告按 `project_id` 解析 | Target、Dataset 与 Evaluator 延续相同边界 |
 | 质量评测与性能压测入口 | 部分实现 | 现有任务和报告页已绑定项目运行目录 | 收敛为统一 Run Spec 与运行详情 |
-| 评测对象 | 未实现 | 无稳定 Target 对象和版本 | P0 新建 Action 与页面 |
+| 评测对象 | 部分实现 | `target.list/get/create`；项目隔离的 Target 与不可变 TargetVersion | P0 完成接入试调、列表和详情页面 |
 | 数据集版本 | 未实现 | 仅有运行时数据集配置 | P0 新建不可变版本对象 |
 | 评估器版本 | 未实现 | EvalScope Evaluator 可执行，但无产品生命周期 | P0 新建 Action 与页面 |
 | Trace 管理 | 部分实现 | EvalScope 有 Agent Trace 组件 | P1 建立外部 Trace 关联和列表 |
@@ -45,6 +45,14 @@
 - 浏览器验收确认项目切换会同步更新 URL、面包屑、导航链接、只读运行目录及网络请求；1440px 桌面与 390px 窄屏均无主内容横向溢出。
 - 本轮没有调用付费模型，也没有自动启动 AI 评价。
 
+### Target Action 基线
+
+- 评测对象与首个版本分别写入项目目录下的 `target.json` 和 `versions/<version_id>.json`，稳定 ID 与创建操作的幂等键绑定。
+- `target.create` 必须先 `dry_run` 预览再确认；创建结果固定为 `draft / untested`，不会把“文档解析成功”当成“真实接入成功”。
+- HTTP、OpenAI 兼容接口和已有 EvalScope 模型配置使用受约束的适配器契约；Skill 还必须绑定宿主运行时、模型参数引用、Tool 契约、加载方式和输入预处理。
+- 鉴权仅接受 `env:VARIABLE` 或 `keychain:service/item` 引用；原始 API Key、URL 内嵌账号密码和查询参数均会被拒绝，Action 响应不会返回凭据引用内容。
+- `target.list/get` 必须同时提供 `project_id`；服务端只从已登记项目解析对象目录，跨项目 ID 无法读取。
+
 ## 已锁定的前端取舍
 
 - 未实现页面必须隐藏入口，不展示“即将上线”的空壳导航。
@@ -57,10 +65,11 @@
 ## 连续开发顺序
 
 1. 已完成：将评测与性能任务的创建、进度、日志和报告按 `project_id` 隔离，并让项目目录成为默认输出根。
-2. 当前 Ready：建立 Target Action 与列表／详情／接入流程，先覆盖 HTTP API 和已有 EvalScope 模型配置。
-3. 建立不可变 DatasetVersion 与字段映射预览，复用既有导入 Skill 的确认规则。
-4. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
-5. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。
-6. 在稳定 Action 上增加 MCP 适配器和全局评测助手，最后再进入 Prompt／Skill 优化飞轮。
+2. 已完成：建立项目隔离的 Target Action 与不可变首版本，先覆盖 HTTP API 和已有 EvalScope 模型配置。
+3. 当前 Ready：实现 Langfuse 式 Target 列表、对象详情与接入向导，并增加不消耗模型额度的 Mock 连接验收。
+4. 建立不可变 DatasetVersion 与字段映射预览，复用既有导入 Skill 的确认规则。
+5. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
+6. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。
+7. 在稳定 Action 上增加 MCP 适配器和全局评测助手，最后再进入 Prompt／Skill 优化飞轮。
 
 每一轮都必须经过真实源文件测试、异常路径、构建、桌面和窄屏浏览器验收、文档更新、密钥扫描后，才能提交和合并。

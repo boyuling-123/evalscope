@@ -21,6 +21,14 @@ from .contracts import (
 from .errors import WorkbenchActionError
 from .persistence import ActionStateStore
 from .projects import ProjectCreatePayload, ProjectGetPayload, ProjectListPayload, ProjectStore
+from .targets import (
+    TargetCreatePayload,
+    TargetDetail,
+    TargetGetPayload,
+    TargetListPayload,
+    TargetStore,
+    TargetSummary,
+)
 
 logger = get_logger()
 
@@ -235,7 +243,7 @@ def action_http_status(response: ActionResponse) -> int:
     if response.ok:
         return 200
     code = response.error.code if response.error else 'INTERNAL_ERROR'
-    if code in {'ACTION_NOT_FOUND', 'PROJECT_NOT_FOUND'}:
+    if code in {'ACTION_NOT_FOUND', 'PROJECT_NOT_FOUND', 'TARGET_NOT_FOUND'}:
         return 404
     if code in {
         'IDEMPOTENCY_CONFLICT',
@@ -253,6 +261,19 @@ def action_http_status(response: ActionResponse) -> int:
 def create_default_registry(workspace_root: str) -> ActionRegistry:
     registry = ActionRegistry(workspace_root)
     projects = ProjectStore(workspace_root)
+    targets = TargetStore(workspace_root)
+
+    def public_target_detail(detail: TargetDetail) -> Dict[str, Any]:
+        data = detail.model_dump(mode='json', exclude_none=True)
+        connection = data['version']['connection']
+        connection['credential_configured'] = bool(connection.pop('credential_ref', None))
+        return data
+
+    def public_target_summary(summary: TargetSummary) -> Dict[str, Any]:
+        data = summary.model_dump(mode='json', exclude_none=True)
+        connection = data['latest_version']['connection']
+        connection['credential_configured'] = bool(connection.pop('credential_ref', None))
+        return data
 
     def discover(payload: CapabilityDiscoverPayload, _: ActionExecutionContext) -> HandlerResult:
         query = payload.query.strip().lower() if payload.query else None
@@ -315,6 +336,61 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             verdict='completed',
             data={'project': project.model_dump(mode='json', exclude_none=True)},
             next_action='project.list',
+        )
+
+    def create_target(payload: TargetCreatePayload, context: ActionExecutionContext) -> HandlerResult:
+        if context.request.dry_run:
+            projects.get(payload.project_id)
+            return HandlerResult(
+                verdict='ready',
+                data={
+                    'preview': {
+                        'project_id': payload.project_id,
+                        'name': payload.name,
+                        'type': payload.type,
+                        'version_label': payload.version_label,
+                        'adapter': payload.connection.adapter,
+                        'credential_configured': payload.connection.credential_ref is not None,
+                        'initial_status': 'draft',
+                        'connection_status': 'untested',
+                        'writes': ['target.json', 'versions/<version_id>.json'],
+                        'starts_connection_test': False,
+                    }
+                },
+                next_action='target.create',
+                warnings=('保存对象不会自动试调，也不会触发模型调用。',),
+            )
+        if context.operation_id is None:
+            raise WorkbenchActionError(
+                code='IDEMPOTENCY_KEY_REQUIRED',
+                message='创建评测对象需要幂等键。',
+            )
+        detail = targets.create(payload, context.operation_id)
+        return HandlerResult(
+            verdict='completed',
+            data={'target': public_target_detail(detail)},
+            next_action='target.get',
+            warnings=('对象已保存为草稿；真实试调通过前不会进入正式候选池。',),
+        )
+
+    def list_targets(payload: TargetListPayload, _: ActionExecutionContext) -> HandlerResult:
+        records, warnings = targets.list(payload)
+        return HandlerResult(
+            verdict='completed',
+            data={
+                'targets': [public_target_summary(record) for record in records],
+                'count': len(records),
+            },
+            next_action='target.create' if not records else 'target.get',
+            warnings=tuple(warnings),
+        )
+
+    def get_target(payload: TargetGetPayload, _: ActionExecutionContext) -> HandlerResult:
+        detail = targets.get(payload)
+        return HandlerResult(
+            verdict='completed',
+            data={'target': public_target_detail(detail)},
+            next_action='target.list',
         )
 
     definitions = [
@@ -385,6 +461,57 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             ),
             ProjectListPayload,
             list_projects,
+        ),
+        (
+            ActionDescriptor(
+                name='target.create',
+                version='1.0',
+                access='write',
+                description='在项目内创建不可变评测对象版本；仅保存凭据引用，不会自动试调或运行。',
+                when_to_use='用户确认对象类型、接口映射、版本和运行绑定后，保存待试调对象时调用。',
+                prerequisites=['有效 project_id', '明确接口和输入输出映射', '正式写入前完成 dry_run 确认'],
+                next_action='target.get',
+                supports_dry_run=True,
+                requires_idempotency=True,
+                requires_confirmation=True,
+                input_schema=TargetCreatePayload.model_json_schema(),
+            ),
+            TargetCreatePayload,
+            create_target,
+        ),
+        (
+            ActionDescriptor(
+                name='target.get',
+                version='1.0',
+                access='read',
+                description='读取项目内指定评测对象及不可变版本，不返回凭据引用内容。',
+                when_to_use='查看对象详情、版本配置或准备试调前调用。',
+                prerequisites=['有效 project_id', '有效 target_id'],
+                next_action='target.list',
+                supports_dry_run=False,
+                requires_idempotency=False,
+                requires_confirmation=False,
+                input_schema=TargetGetPayload.model_json_schema(),
+            ),
+            TargetGetPayload,
+            get_target,
+        ),
+        (
+            ActionDescriptor(
+                name='target.list',
+                version='1.0',
+                access='read',
+                description='列出指定项目内的评测对象，可按类型和状态筛选。',
+                when_to_use='进入对象列表、选择被测对象或检查项目内对象状态时调用。',
+                prerequisites=['有效 project_id'],
+                next_action='target.get',
+                supports_dry_run=False,
+                requires_idempotency=False,
+                requires_confirmation=False,
+                input_schema=TargetListPayload.model_json_schema(),
+            ),
+            TargetListPayload,
+            list_targets,
         ),
     ]
     for descriptor, payload_model, handler in definitions:
