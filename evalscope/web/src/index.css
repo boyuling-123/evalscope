@@ -350,6 +350,12 @@ body {
   flex-direction: column;
 }
 
+.workbench-canvas {
+  background:
+    radial-gradient(circle at 78% -10%, var(--accent-dim), transparent 34rem),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 160%);
+}
+
 /* ------------------------------------------------------------------ */
 /* Focus indicator — WCAG 2.1 SC 2.4.7 / 1.4.11 (Req 12.6)            */
 /* A single accent ring shown on BOTH themes for every interactive     */

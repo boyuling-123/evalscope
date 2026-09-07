@@ -33,7 +33,8 @@ import { axe } from 'jest-axe'
 
 import ReportCard from './reports/ReportCard'
 import ReportsTable from './reports/ReportsTable'
-import TopNav from './nav/TopNav'
+import WorkbenchSidebar from './nav/WorkbenchSidebar'
+import WorkbenchTopbar from './nav/WorkbenchTopbar'
 import { LocaleProvider } from '@/contexts/LocaleContext'
 import type { ReportSummary } from '@/api/types'
 
@@ -61,7 +62,7 @@ function renderWithLocale(ui: React.ReactNode) {
   return render(<LocaleProvider>{ui}</LocaleProvider>)
 }
 
-/** Render helper: Locale provider + a router (needed by TopNav's NavLink). */
+/** Render helper: Locale provider + a router (needed by workbench NavLinks). */
 function renderWithRouter(ui: React.ReactNode) {
   return render(
     <LocaleProvider>
@@ -123,17 +124,27 @@ describe('Responsive wrapping — metadata wraps, never truncates', () => {
 })
 
 describe('Touch targets — primary controls carry the 44px guarantee', () => {
-  it('TopNav navigation links carry the coarse-target utility', () => {
-    const { container } = renderWithRouter(<TopNav />)
+  it('Workbench navigation and shell controls carry the coarse-target utility', () => {
+    const { container } = renderWithRouter(
+      <>
+        <WorkbenchSidebar
+          collapsed={false}
+          mobileOpen={false}
+          onToggleCollapsed={() => {}}
+          onCloseMobile={() => {}}
+        />
+        <WorkbenchTopbar mobileNavigationOpen={false} onOpenNavigation={() => {}} />
+      </>,
+    )
 
     const links = Array.from(container.querySelectorAll('a'))
     expect(links.length).toBeGreaterThan(0)
     for (const link of links) expect(link.className).toContain('coarse-target')
 
-    // The mobile menu toggle button is also a coarse target.
-    const menuButton = screen.getByLabelText('Toggle menu')
+    const menuButton = screen.getByLabelText('Open navigation')
     expect(menuButton.className).toContain('coarse-target')
-
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByLabelText('Collapse sidebar').className).toContain('coarse-target')
   })
 
   it('ReportCard compare-selection control has a >=44x44 hit area', () => {

@@ -47,8 +47,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <ThemeProvider>
-          <LocaleProvider>
+        <ThemeProvider defaultTheme="light">
+          <LocaleProvider defaultLocale="zh">
             <ReportsProvider>
               <AppRoutes />
             </ReportsProvider>

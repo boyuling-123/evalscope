@@ -194,10 +194,8 @@ export default function BenchmarksPage() {
       {/* A failed catalog read would otherwise render as "no benchmarks match". */}
       {catalog.error && <ErrorAlert className="rounded-[var(--radius-sm)]">{catalog.error}</ErrorAlert>}
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{t('benchmarks.title')}</h1>
-        <span className="text-sm text-[var(--text-muted)]">
+      <div className="flex items-center justify-end">
+        <span aria-live="polite" className="text-sm text-[var(--text-muted)]">
           {t('benchmarks.showing', { n: items.length, total: allBenchmarks.length })}
         </span>
       </div>
