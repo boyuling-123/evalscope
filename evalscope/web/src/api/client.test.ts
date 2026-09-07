@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { apiValidated } from './client'
+import { apiPostValidated, apiValidated } from './client'
 
 /** Stub `fetch` to return `body` as a successful JSON response. */
 function mockJsonResponse(body: unknown): void {
@@ -39,5 +39,28 @@ describe('apiValidated transport', () => {
     )
 
     await expect(apiValidated('/api/v1/test')).rejects.toMatchObject({ kind: 'network' })
+  })
+
+  it('preserves a structured Action error message from an HTTP response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        json: async () => ({
+          error: {
+            code: 'CONFIRMATION_REQUIRED',
+            message: '请先预览并确认项目创建操作。',
+          },
+        }),
+      }) as unknown as Response),
+    )
+
+    await expect(apiPostValidated('/api/v1/test', {})).rejects.toMatchObject({
+      kind: 'http-4xx',
+      status: 409,
+      message: '请先预览并确认项目创建操作。',
+    })
   })
 })

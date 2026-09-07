@@ -1,42 +1,74 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useParams } from 'react-router-dom'
 import { LocaleProvider } from '@/contexts/LocaleContext'
+import { ProjectProvider, useProjects } from '@/contexts/ProjectContext'
 import { ReportsProvider } from '@/contexts/ReportsContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import MainLayout from '@/layouts/MainLayout'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
 import { lazy, Suspense } from 'react'
 import Skeleton from '@/components/ui/Skeleton'
+import { isProjectId, projectRoute } from '@/navigation/projectRoutes'
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
-const ReportsPage = lazy(() => import('@/pages/ReportsPage'))
+const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
+const RunsPage = lazy(() => import('@/pages/RunsPage'))
 const ReportDetailPage = lazy(() => import('@/pages/ReportDetailPage'))
 const ComparePage = lazy(() => import('@/pages/ComparePage'))
 const TasksPage = lazy(() => import('@/pages/TasksPage'))
-const PerfReportsPage = lazy(() => import('@/pages/PerfReportsPage'))
 const PerfReportDetailPage = lazy(() => import('@/pages/PerfReportDetailPage'))
 const PerfComparePage = lazy(() => import('@/pages/PerfComparePage'))
 const ReportViewerPage = lazy(() => import('@/pages/ReportViewerPage'))
 const BenchmarksPage = lazy(() => import('@/pages/BenchmarksPage'))
+
+function ProjectRouteGuard() {
+  const { projectId } = useParams()
+  const { projects, loading } = useProjects()
+  if (loading) return <Skeleton lines={5} height={16} className="p-2" />
+  if (!isProjectId(projectId) || !projects.some((project) => project.id === projectId)) {
+    return <Navigate to="/projects" replace />
+  }
+  return <Outlet />
+}
+
+function ProjectIndexRedirect() {
+  const { projectId } = useParams()
+  return <Navigate to={projectRoute(projectId)} replace />
+}
+
+function LegacyRouteRedirect({ path }: { path: string }) {
+  const { projects, loading } = useProjects()
+  if (loading) return <Skeleton lines={5} height={16} className="p-2" />
+  return <Navigate to={projectRoute(projects[0]?.id, path)} replace />
+}
 
 function AppRoutes() {
   return (
     <Suspense fallback={<Skeleton lines={6} height={16} className="p-6" />}>
       <Routes>
         <Route element={<MainLayout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/reports/:runId/:modelId" element={<ReportDetailPage />} />
-          <Route path="/compare" element={<ComparePage />} />
-          <Route path="/performance" element={<PerfReportsPage />} />
-          <Route path="/perf-report" element={<PerfReportDetailPage />} />
-          <Route path="/perf-compare" element={<PerfComparePage />} />
-          <Route path="/tasks" element={<TasksPage />} />
-          {/* Legacy task routes — redirect into the unified Tasks page */}
-          <Route path="/eval" element={<Navigate to="/tasks?tab=eval" replace />} />
-          <Route path="/perf" element={<Navigate to="/tasks?tab=perf" replace />} />
-          <Route path="/benchmarks" element={<BenchmarksPage />} />
-          <Route path="/viewer" element={<ReportViewerPage />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route element={<ProjectRouteGuard />}>
+            <Route path="/project/:projectId" element={<ProjectIndexRedirect />} />
+            <Route path="/project/:projectId/dashboard" element={<DashboardPage />} />
+            <Route path="/project/:projectId/runs" element={<RunsPage />} />
+            <Route path="/project/:projectId/runs/new" element={<TasksPage />} />
+            <Route path="/project/:projectId/runs/compare" element={<ComparePage />} />
+            <Route path="/project/:projectId/runs/quality/:runId/:modelId" element={<ReportDetailPage />} />
+            <Route path="/project/:projectId/runs/performance/detail" element={<PerfReportDetailPage />} />
+            <Route path="/project/:projectId/runs/performance/compare" element={<PerfComparePage />} />
+            <Route path="/project/:projectId/runs/viewer" element={<ReportViewerPage />} />
+            <Route path="/project/:projectId/benchmarks" element={<BenchmarksPage />} />
+          </Route>
+
+          {/* Preserve old bookmarks while moving every working page into a project scope. */}
+          <Route path="/dashboard" element={<LegacyRouteRedirect path="/dashboard" />} />
+          <Route path="/reports" element={<LegacyRouteRedirect path="/runs" />} />
+          <Route path="/performance" element={<LegacyRouteRedirect path="/runs?view=performance" />} />
+          <Route path="/tasks" element={<LegacyRouteRedirect path="/runs/new" />} />
+          <Route path="/eval" element={<LegacyRouteRedirect path="/runs/new?tab=eval" />} />
+          <Route path="/perf" element={<LegacyRouteRedirect path="/runs/new?tab=perf" />} />
+          <Route path="/benchmarks" element={<LegacyRouteRedirect path="/benchmarks" />} />
+          <Route path="*" element={<Navigate to="/projects" replace />} />
         </Route>
       </Routes>
     </Suspense>
@@ -49,9 +81,11 @@ export default function App() {
       <ErrorBoundary>
         <ThemeProvider defaultTheme="light">
           <LocaleProvider defaultLocale="zh">
-            <ReportsProvider>
-              <AppRoutes />
-            </ReportsProvider>
+            <ProjectProvider>
+              <ReportsProvider>
+                <AppRoutes />
+              </ReportsProvider>
+            </ProjectProvider>
           </LocaleProvider>
         </ThemeProvider>
       </ErrorBoundary>

@@ -17,6 +17,8 @@ import ErrorAlert from '@/components/ui/ErrorAlert'
 import { LATENCY_CHARTS, THROUGHPUT_CHARTS } from '@/domain/perf/charts'
 import { formatTimestamp } from '@/utils/formatUtils'
 import { AlertTriangle, ArrowLeftRight, GitCompareArrows, Info } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { projectRouteOr } from '@/navigation/projectRoutes'
 
 type CompareVisualization = 'sparse' | 'trend'
 
@@ -84,6 +86,7 @@ function runLabel(run: PerfDetailResponse | undefined): string {
 
 export default function PerfComparePage() {
   const { t } = useLocale()
+  const { projectId } = useParams()
   const { get, set } = useQueryParams()
   const { rootPath: ctxRoot } = useScan()
 
@@ -135,7 +138,10 @@ export default function PerfComparePage() {
       <div className="page-enter flex flex-col gap-4">
         <Breadcrumb
           items={[
-            { label: t('nav.performance'), href: `/performance?root_path=${encodeURIComponent(rootPath)}` },
+            {
+              label: t('nav.runs'),
+              href: projectRouteOr(projectId, `/runs?view=performance&root_path=${encodeURIComponent(rootPath)}`, `/performance?root_path=${encodeURIComponent(rootPath)}`),
+            },
             { label: t('perf.archive.comparePageTitle') },
           ]}
         />
@@ -174,7 +180,10 @@ export default function PerfComparePage() {
     <div className="page-enter flex flex-col gap-4">
       <Breadcrumb
         items={[
-          { label: t('nav.performance'), href: `/performance?root_path=${encodeURIComponent(rootPath)}` },
+          {
+            label: t('nav.runs'),
+            href: projectRouteOr(projectId, `/runs?view=performance&root_path=${encodeURIComponent(rootPath)}`, `/performance?root_path=${encodeURIComponent(rootPath)}`),
+          },
           { label: t('perf.archive.comparePageTitle') },
         ]}
       />

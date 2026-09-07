@@ -20,6 +20,8 @@ import * as tasks from './tasks'
 import * as tabs from './tabs'
 import * as form from './form'
 import * as empty from './empty'
+import * as projects from './projects'
+import * as runs from './runs'
 
 export type { Locale, Dict }
 
@@ -44,6 +46,8 @@ const en: Dict = {
   tabs: tabs.en,
   form: form.en,
   empty: empty.en,
+  projects: projects.en,
+  runs: runs.en,
 }
 
 const zh: Dict = {
@@ -67,6 +71,8 @@ const zh: Dict = {
   tabs: tabs.zh,
   form: form.zh,
   empty: empty.zh,
+  projects: projects.zh,
+  runs: runs.zh,
 }
 
 const translations: Record<Locale, Dict> = { en, zh }

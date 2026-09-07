@@ -4,12 +4,11 @@
 @plugin "@tailwindcss/typography";
 
 /* ------------------------------------------------------------------ */
-/* Tailwind theme — font stacks (drives Tailwind font-sans / font-mono) */
-/* Cross-platform OS-native stacks per DESIGN.md §Typography.          */
+/* Tailwind theme — a local-first Chinese product stack with no web-font request. */
 /* ------------------------------------------------------------------ */
 @theme {
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-               Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Avenir Next", "PingFang SC", "Noto Sans CJK SC",
+               "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
                "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace;
 }
@@ -32,58 +31,55 @@
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Score gradient per-theme knobs (overridden in [data-theme="light"]). */
-  /* See DESIGN.md §Score Gradient — fg saturation/lightness + bg alpha mul   */
-  /* let yellow mids stay legible on warm-cream without re-coding the brand   */
-  /* HSL. Light theme also boosts saturation so the mid hue (≈60 olive) gets  */
-  /* enough chroma to read on the SVG ring stroke / large display digits.    */
+  /* Light mode boosts mid-score contrast on neutral working surfaces. */
   --score-fg-s: 70%;
   --score-fg-l: 45%;
   --score-bg-a-mul: 1;
 }
 
 /* ------------------------------------------------------------------ */
-/* Dark theme (default)                                                */
+/* Dark theme                                                          */
 /* ------------------------------------------------------------------ */
 :root,
 [data-theme="dark"] {
   /* Backgrounds */
-  --bg: #0c0c1a;
-  --bg-card: #12122b;
-  --bg-card2: #16163a;
-  --bg-deep: #09091a;
+  --bg: #09090b;
+  --bg-card: #111113;
+  --bg-card2: #1b1b1f;
+  --bg-deep: #0d0d0f;
 
   /* Accent */
-  --accent: #816DF8;
-  --accent-dim: rgba(129, 109, 248, 0.12);
-  --accent-dark: #5B3FD6;
-  --purple: #a78bfa;
+  --accent: #2563eb;
+  --accent-dim: rgba(37, 99, 235, 0.14);
+  --accent-dark: #1d4ed8;
+  --purple: #818cf8;
   --green: #0F9C7E;
   --yellow: #fbbf24;
   --cyan: #22d3ee;
 
   /* Text — 3-step ladder + on-filled (named tokens per DESIGN.md §Text) */
-  --text: #e2e8f0;
-  --text-muted: #8896aa;
-  --text-dim: #7a8195;
+  --text: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --text-dim: #71717a;
   --text-on-filled: #ffffff;
 
   /* Borders — three steps per DESIGN.md §Hairline borders */
-  --border: rgba(129, 109, 248, 0.10);
-  --border-md: rgba(129, 109, 248, 0.18);
-  --border-strong: rgba(129, 109, 248, 0.28);
+  --border: #27272a;
+  --border-md: #3f3f46;
+  --border-strong: #52525b;
 
   /* Shadows */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
-  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 20px rgba(129, 109, 248, 0.25);
-  --shadow-glow-soft: 0 0 12px rgba(129, 109, 248, 0.20);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.42);
+  --shadow-glow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  --shadow-glow-soft: 0 0 0 2px rgba(37, 99, 235, 0.14);
 
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #816DF8 0%, #a78bfa 100%);
+  --gradient-primary: linear-gradient(135deg, #2563eb 0%, #0f766e 100%);
   --gradient-accent: linear-gradient(135deg, #0F9C7E 0%, #06b6d4 100%);
   --gradient-warm: linear-gradient(135deg, #fbbf24 0%, #ef4444 100%);
-  --gradient-surface: linear-gradient(135deg, rgba(129, 109, 248, 0.08) 0%, rgba(167, 139, 250, 0.05) 100%);
+  --gradient-surface: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(15, 118, 110, 0.04) 100%);
 
   /* Deep saturated pass / fail — boolean badges (DESIGN.md §Semantic) */
   --pass: rgb(45, 104, 62);
@@ -93,7 +89,7 @@
   --overlay-bg: rgba(0, 0, 0, 0.82);
 
   /* Glassmorphic surface — sticky top-nav (DESIGN.md §Surface) */
-  --surface-glass: rgba(18, 18, 43, 0.7);
+  --surface-glass: rgba(17, 17, 19, 0.88);
 
   /* Semantic color tokens */
   --danger: #ef4444;
@@ -181,47 +177,40 @@
 /* Light theme                                                         */
 /* ------------------------------------------------------------------ */
 [data-theme="light"] {
-  /* Backgrounds — warm-cream surface ladder (DESIGN.md §Surface, warm console) */
-  --bg: #faf9f5;
+  /* Neutral surfaces keep dense evaluation data legible and familiar. */
+  --bg: #f8fafc;
   --bg-card: #ffffff;
-  --bg-card2: #f5f0e7;
-  --bg-deep: #f0ebe1;
+  --bg-card2: #f1f5f9;
+  --bg-deep: #f4f6f8;
 
-  /* Accent — keep same hue, tune lightness for light bg */
-  --accent: #6c57e8;
-  --accent-dim: rgba(108, 87, 232, 0.14);
-  --accent-dark: #4f3ec8;
-  --purple: #7c6be0;
+  --accent: #1d4ed8;
+  --accent-dim: rgba(29, 78, 216, 0.09);
+  --accent-dark: #1e40af;
+  --purple: #4f46e5;
   --green: #0a8a6e;
   --yellow: #d97706;
   --cyan: #0891b2;
 
-  /* Text — warm-ink ladder (DESIGN.md §Text, warm console) */
-  --text: #141413;
-  --text-muted: #6c6a64;
-  --text-dim: #8e8b82;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #64748b;
   --text-on-filled: #ffffff;
 
-  /* Borders — solid warm-grey hairlines, NOT translucent violet (DESIGN.md §Hairlines). */
-  /* Translucent violet at 0.20 alpha composites to near-invisible on white cards; solid */
-  /* warm-grey gives every card a definite boundary. */
-  --border: #e6dfd8;
-  --border-md: #d6cdbe;
-  --border-strong: #c1b6a3;
+  --border: #e2e8f0;
+  --border-md: #cbd5e1;
+  --border-strong: #94a3b8;
 
-  /* Shadows — two-stop warm-ink stacks (matches text colour, not slate). */
-  /* Slate drops on cream read as a cool-grey smudge and break the warm canvas. */
-  --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.04), 0 4px 12px rgba(20, 20, 19, 0.06);
-  --shadow: 0 4px 16px rgba(20, 20, 19, 0.07), 0 12px 32px rgba(20, 20, 19, 0.05);
-  --shadow-lg: 0 12px 24px rgba(20, 20, 19, 0.09), 0 24px 48px rgba(20, 20, 19, 0.07);
-  --shadow-glow: 0 0 20px rgba(108, 87, 232, 0.22);
-  --shadow-glow-soft: 0 0 12px rgba(108, 87, 232, 0.18);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 18px 48px rgba(15, 23, 42, 0.14);
+  --shadow-glow: 0 0 0 3px rgba(29, 78, 216, 0.14);
+  --shadow-glow-soft: 0 0 0 2px rgba(29, 78, 216, 0.10);
 
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #6c57e8 0%, #7c6be0 100%);
+  --gradient-primary: linear-gradient(135deg, #1d4ed8 0%, #0f766e 100%);
   --gradient-accent: linear-gradient(135deg, #0a8a6e 0%, #0891b2 100%);
   --gradient-warm: linear-gradient(135deg, #d97706 0%, #dc2626 100%);
-  --gradient-surface: linear-gradient(135deg, rgba(108, 87, 232, 0.06) 0%, rgba(124, 107, 224, 0.03) 100%);
+  --gradient-surface: linear-gradient(135deg, rgba(29, 78, 216, 0.05) 0%, rgba(15, 118, 110, 0.025) 100%);
 
   /* Deep saturated pass / fail */
   --pass: rgb(16, 108, 55);
@@ -230,12 +219,10 @@
   /* Overlay / tooltip backdrop */
   --overlay-bg: rgba(0, 0, 0, 0.55);
 
-  /* Glassmorphic surface — warm-tinted (DESIGN.md §Surface, warm console) */
-  --surface-glass: rgba(250, 249, 245, 0.80);
+  --surface-glass: rgba(255, 255, 255, 0.90);
 
-  /* Score gradient — darker fg lightness + higher saturation + boosted bg   */
-  /* alpha so yellow mids stay legible on warm-cream. The +15pt saturation    */
-  /* bump compensates for the lightness compression at mid hues (≈60 olive). */
+  /* Score gradient: darker foreground plus a stronger translucent fill keeps */
+  /* yellow mid-scores legible on light cards without changing their meaning. */
   /* See DESIGN.md §Score Gradient. */
   --score-fg-s: 85%;
   --score-fg-l: 32%;
@@ -269,11 +256,8 @@
   --compare-2-bg: rgba(217, 119, 6, 0.07);
   --compare-2-bg-header: rgba(217, 119, 6, 0.12);
 
-  /* Chart colors — light-theme palette is deeper + more saturated than dark's */
-  /* counterpart, because warm-cream bg (`--bg-card` / `--bg-deep`) compresses */
-  /* cool hues via simultaneous contrast. Mid-tone slate blue / violet read    */
-  /* as washed-out on cream; pulling lightness down and saturation up restores */
-  /* the "data-bearing" punch of the same hue family. */
+  /* Light-theme chart colors are deeper than their dark counterparts so each */
+  /* series remains distinguishable on white and slate working surfaces. */
   --chart-latency: #2563eb;
   --chart-ttft: #047857;
   --chart-tpot: #5b48e0;
@@ -352,8 +336,8 @@ body {
 
 .workbench-canvas {
   background:
-    radial-gradient(circle at 78% -10%, var(--accent-dim), transparent 34rem),
-    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 160%);
+    radial-gradient(circle at 82% -18%, var(--accent-dim), transparent 30rem),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 180%);
 }
 
 /* ------------------------------------------------------------------ */
@@ -361,9 +345,9 @@ body {
 /* A single accent ring shown on BOTH themes for every interactive     */
 /* element. `outline` keeps layout intact; `outline-offset` lifts the  */
 /* ring off the control so it also reads on accent-filled buttons —    */
-/* the ring sits on the page canvas where the violet accent scores     */
-/* ≥3:1 non-text contrast against both warm-cream (light) and          */
-/* near-black indigo (dark). `:where()` keeps specificity at 0 so a    */
+/* the ring sits on the page canvas where the cobalt accent scores     */
+/* ≥3:1 non-text contrast against both slate (light) and zinc (dark).  */
+/* `:where()` keeps specificity at 0 so a                              */
 /* component can still opt into a bespoke focus treatment.             */
 /* ------------------------------------------------------------------ */
 :where(a, button, input, select, textarea, summary,

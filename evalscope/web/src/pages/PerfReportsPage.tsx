@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import { useLocale, type Translate } from '@/contexts/LocaleContext'
 import { useScan } from '@/contexts/ReportsContext'
@@ -21,6 +21,7 @@ import type { MetricSemantics } from '@/domain/metric'
 import { formatTimestamp } from '@/utils/formatUtils'
 import { resolveProvider } from '@/domain/perf/providerResolution'
 import { addToSelection, preserveSelectionAcrossReorder } from '@/domain/compare/selection'
+import { projectRouteOr } from '@/navigation/projectRoutes'
 
 type SortKey = 'time' | 'rps' | 'latency'
 
@@ -125,6 +126,7 @@ function PerfRunCard({
 export default function PerfReportsPage() {
   const { t } = useLocale()
   const navigate = useNavigate()
+  const { projectId } = useParams()
   const [searchParams] = useSearchParams()
   const { rootPath, scanToken, setRootPath } = useScan()
 
@@ -185,8 +187,13 @@ export default function PerfReportsPage() {
     const first = runs.find((r) => r.path === selected[0])
     const embedding = first?.is_embedding ? '1' : '0'
     navigate(
-      `/perf-compare?paths=${encodeURIComponent(selected.join(';'))}`
-        + `&embedding=${embedding}&root_path=${encodeURIComponent(rootPath)}`,
+      projectRouteOr(
+        projectId,
+        `/runs/performance/compare?paths=${encodeURIComponent(selected.join(';'))}`
+          + `&embedding=${embedding}&root_path=${encodeURIComponent(rootPath)}`,
+        `/perf-compare?paths=${encodeURIComponent(selected.join(';'))}`
+          + `&embedding=${embedding}&root_path=${encodeURIComponent(rootPath)}`,
+      ),
     )
   }
 
@@ -222,7 +229,11 @@ export default function PerfReportsPage() {
   }, [reloadRuns])
 
   const openRun = (run: PerfRunSummary) => {
-    navigate(`/perf-report?path=${encodeURIComponent(run.path)}&root_path=${encodeURIComponent(rootPath)}`)
+    navigate(projectRouteOr(
+      projectId,
+      `/runs/performance/detail?path=${encodeURIComponent(run.path)}&root_path=${encodeURIComponent(rootPath)}`,
+      `/perf-report?path=${encodeURIComponent(run.path)}&root_path=${encodeURIComponent(rootPath)}`,
+    ))
   }
 
   // Apply keyword search + sort.

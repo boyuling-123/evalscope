@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { AlertCircle, Inbox, SearchX } from 'lucide-react'
 import { useLocale } from '@/contexts/LocaleContext'
 import EmptyState from '@/components/common/EmptyState'
 import Button from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
+import { projectRouteOr } from '@/navigation/projectRoutes'
 
 export const MAX_REVEAL_DELAY_MS = 300
 
@@ -46,33 +47,43 @@ const VIEW_ROUTES: Record<EmptyStateView, string> = {
   benchmarks: '/benchmarks',
 }
 
-function viewRoute(context: EmptyStateContext): string {
-  return context.view ? VIEW_ROUTES[context.view] : '/dashboard'
-}
-
-function createTaskRoute(context: EmptyStateContext): string {
-  if (context.createTaskTo?.trim()) return context.createTaskTo.trim()
-  if (context.view === 'performance' || context.view === 'perf-compare') return '/tasks?tab=perf'
-  if (context.view === 'reports' || context.view === 'evaluations' || context.view === 'compare') {
-    return '/tasks?tab=eval'
+function viewRoute(context: EmptyStateContext, projectId?: string): string {
+  const legacy = context.view ? VIEW_ROUTES[context.view] : '/dashboard'
+  if (context.view === 'performance') return projectRouteOr(projectId, '/runs?view=performance', legacy)
+  if (context.view === 'perf-compare') return projectRouteOr(projectId, '/runs/performance/compare', legacy)
+  if (context.view === 'compare') return projectRouteOr(projectId, '/runs/compare', legacy)
+  if (context.view === 'benchmarks') return projectRouteOr(projectId, '/benchmarks', legacy)
+  if (context.view === 'reports' || context.view === 'evaluations') {
+    return projectRouteOr(projectId, '/runs', legacy)
   }
-  return '/tasks'
+  return projectRouteOr(projectId, '/dashboard', legacy)
 }
 
-function actionsFor(reason: EmptyReason, context: EmptyStateContext): EmptyStateAction[] {
+function createTaskRoute(context: EmptyStateContext, projectId?: string): string {
+  if (context.createTaskTo?.trim()) return context.createTaskTo.trim()
+  if (context.view === 'performance' || context.view === 'perf-compare') {
+    return projectRouteOr(projectId, '/runs/new?tab=perf', '/tasks?tab=perf')
+  }
+  if (context.view === 'reports' || context.view === 'evaluations' || context.view === 'compare') {
+    return projectRouteOr(projectId, '/runs/new?tab=eval', '/tasks?tab=eval')
+  }
+  return projectRouteOr(projectId, '/runs/new', '/tasks')
+}
+
+function actionsFor(reason: EmptyReason, context: EmptyStateContext, projectId?: string): EmptyStateAction[] {
   const actions: EmptyStateAction[] = reason === 'no-data'
     ? [
-        { labelKey: 'empty.action.createTask', navigateTo: createTaskRoute(context) },
-        { labelKey: 'empty.action.browseBenchmarks', navigateTo: '/benchmarks' },
+        { labelKey: 'empty.action.createTask', navigateTo: createTaskRoute(context, projectId) },
+        { labelKey: 'empty.action.browseBenchmarks', navigateTo: projectRouteOr(projectId, '/benchmarks') },
       ]
     : reason === 'load-error'
       ? [
-          { labelKey: 'empty.action.retry', navigateTo: context.retryTo?.trim() || viewRoute(context) },
-          { labelKey: 'empty.action.backToDashboard', navigateTo: '/dashboard' },
+          { labelKey: 'empty.action.retry', navigateTo: context.retryTo?.trim() || viewRoute(context, projectId) },
+          { labelKey: 'empty.action.backToDashboard', navigateTo: projectRouteOr(projectId, '/dashboard') },
         ]
       : [
-          { labelKey: 'empty.action.clearFilters', navigateTo: context.clearFiltersTo?.trim() || viewRoute(context) },
-          { labelKey: 'empty.action.createTask', navigateTo: createTaskRoute(context) },
+          { labelKey: 'empty.action.clearFilters', navigateTo: context.clearFiltersTo?.trim() || viewRoute(context, projectId) },
+          { labelKey: 'empty.action.createTask', navigateTo: createTaskRoute(context, projectId) },
         ]
 
   const seen = new Set<string>()
@@ -124,15 +135,16 @@ export default function EmptyStateSystem({
 }: EmptyStateSystemProps) {
   const { t } = useLocale()
   const navigate = useNavigate()
+  const { projectId } = useParams()
   const delay = Math.min(Math.max(revealDelayMs, 0), MAX_REVEAL_DELAY_MS)
 
   const resolved = useMemo(() => {
-    const actions = actionsFor(reason, context ?? {}).map((action) => ({
+    const actions = actionsFor(reason, context ?? {}, projectId).map((action) => ({
       label: t(action.labelKey),
       navigateTo: action.navigateTo,
     }))
     return { message: t(`empty.${reason}.message`), actions }
-  }, [reason, context, t])
+  }, [reason, context, projectId, t])
 
   if (loading) return null
 

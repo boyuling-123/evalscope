@@ -1,7 +1,6 @@
 import type { Dict } from './types'
 
 export const en: Dict = {
-  title: 'Reports',
   pathLabel: 'Output Directory',
   scan: 'Scan',
   scanning: 'Scanning...',
@@ -38,7 +37,6 @@ export const en: Dict = {
 }
 
 export const zh: Dict = {
-  title: '报告',
   pathLabel: '输出目录',
   scan: '扫描',
   scanning: '扫描中...',
