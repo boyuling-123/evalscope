@@ -45,8 +45,10 @@ jobs:
         run: >-
           python -m pytest
           tests/security/test_secret_scan.py
+          tests/workbench
           tests/service/test_bootstrap.py
           tests/service/test_api_contracts.py
+          tests/service/test_workbench_actions.py
           tests/service/test_process_stderr.py
           tests/service/test_process_stop.py
           tests/cli/test_service.py

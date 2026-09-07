@@ -17,3 +17,4 @@ def test_service_boots_without_model_credentials(tmp_path, monkeypatch):
     config = client.get('/api/v1/config')
     assert config.status_code == 200
     assert config.get_json() == {'outputs_root': str(tmp_path)}
+    assert app.config['WORKBENCH_ROOT'] == str(tmp_path / '.evalscope-workbench')

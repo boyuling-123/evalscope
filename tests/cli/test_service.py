@@ -2,7 +2,7 @@ import argparse
 
 import pytest
 
-from evalscope.cli.start_service import existing_directory
+from evalscope.cli.start_service import existing_directory, existing_workspace_directory
 
 
 def test_existing_directory_returns_absolute_path(tmp_path):
@@ -14,3 +14,14 @@ def test_existing_directory_rejects_missing_path(tmp_path):
 
     with pytest.raises(argparse.ArgumentTypeError, match='output directory does not exist'):
         existing_directory(str(missing_path))
+
+
+def test_existing_workspace_directory_returns_absolute_path(tmp_path):
+    assert existing_workspace_directory(str(tmp_path)) == str(tmp_path)
+
+
+def test_existing_workspace_directory_rejects_missing_path(tmp_path):
+    missing_path = tmp_path / 'missing-workspace'
+
+    with pytest.raises(argparse.ArgumentTypeError, match='workspace directory does not exist'):
+        existing_workspace_directory(str(missing_path))
