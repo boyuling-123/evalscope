@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  confirmTargetCreate,
   confirmProjectCreate,
+  getTarget,
+  listTargets,
   listProjects,
   previewProjectCreate,
+  previewTargetCreate,
   type ProjectRecord,
+  type TargetCreateInput,
+  type TargetDetail,
 } from './workbench'
 
 const PROJECT: ProjectRecord = {
@@ -16,6 +22,76 @@ const PROJECT: ProjectRecord = {
   archived: false,
   root_path: '/tmp/evalscope/projects/prj_0123456789abcdefabcd',
   runs_path: '/tmp/evalscope/projects/prj_0123456789abcdefabcd/runs',
+}
+
+const TARGET_INPUT: TargetCreateInput = {
+  project_id: PROJECT.id,
+  name: '客服 Agent',
+  type: 'agent',
+  description: '用于回归客服意图识别与工具调用',
+  capabilities: ['意图识别', '工具调用'],
+  version_label: 'v1',
+  provider: '本地服务',
+  input_modalities: ['text'],
+  output_modalities: ['text'],
+  connection: {
+    adapter: 'openai_responses',
+    endpoint: 'http://127.0.0.1:9000/v1/responses',
+    model_id: 'customer-agent',
+    credential_ref: 'env:TARGET_API_KEY',
+    method: 'POST',
+    input_field: 'input',
+    output_path: 'output_text',
+    timeout_seconds: 60,
+  },
+}
+
+const TARGET_DETAIL: TargetDetail = {
+  target: {
+    schema_version: 1,
+    id: 'tgt_0123456789abcdefabcd',
+    project_id: PROJECT.id,
+    name: TARGET_INPUT.name,
+    type: TARGET_INPUT.type,
+    description: TARGET_INPUT.description,
+    capabilities: TARGET_INPUT.capabilities,
+    latest_version_id: 'tgv_0123456789abcdefabcd',
+    status: 'draft',
+    created_at: '2026-09-08T01:00:00Z',
+    updated_at: '2026-09-08T01:00:00Z',
+  },
+  version: {
+    schema_version: 1,
+    id: 'tgv_0123456789abcdefabcd',
+    target_id: 'tgt_0123456789abcdefabcd',
+    version_number: 1,
+    label: 'v1',
+    provider: '本地服务',
+    input_modalities: ['text'],
+    output_modalities: ['text'],
+    connection: {
+      adapter: 'openai_responses',
+      endpoint: 'http://127.0.0.1:9000/v1/responses',
+      model_id: 'customer-agent',
+      method: 'POST',
+      input_field: 'input',
+      output_path: 'output_text',
+      timeout_seconds: 60,
+      credential_configured: true,
+    },
+    connection_status: 'untested',
+    config_hash: 'a'.repeat(64),
+    created_at: '2026-09-08T01:00:00Z',
+  },
+  versions: [{
+    id: 'tgv_0123456789abcdefabcd',
+    version_number: 1,
+    label: 'v1',
+    provider: '本地服务',
+    connection_status: 'untested',
+    config_hash: 'a'.repeat(64),
+    created_at: '2026-09-08T01:00:00Z',
+  }],
 }
 
 function actionResponse(data: unknown) {
@@ -91,6 +167,74 @@ describe('workbench Action client', () => {
       dry_run: false,
       confirmation_token: 'confirm_test',
       idempotency_key: 'create-project-test',
+    })
+  })
+
+  it('lists and gets targets inside the selected project scope', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => actionResponse({
+          targets: [{ target: TARGET_DETAIL.target, latest_version: TARGET_DETAIL.version }],
+          count: 1,
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => actionResponse({ target: TARGET_DETAIL }),
+      } as Response)
+
+    await expect(listTargets(PROJECT.id)).resolves.toMatchObject({ targets: [{ target: TARGET_DETAIL.target }] })
+    await expect(getTarget(PROJECT.id, TARGET_DETAIL.target.id)).resolves.toEqual(TARGET_DETAIL)
+
+    const listBody = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    const getBody = JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))
+    expect(listBody).toMatchObject({ action: 'target.list', payload: { project_id: PROJECT.id, limit: 200 } })
+    expect(getBody).toMatchObject({ action: 'target.get', payload: { project_id: PROJECT.id, target_id: TARGET_DETAIL.target.id } })
+    expect(JSON.stringify(TARGET_DETAIL)).not.toContain('TARGET_API_KEY')
+  })
+
+  it('previews and confirms a target draft through the guarded Action flow', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => actionResponse({
+          preview: {
+            project_id: PROJECT.id,
+            name: TARGET_INPUT.name,
+            type: TARGET_INPUT.type,
+            version_label: 'v1',
+            adapter: 'openai_responses',
+            credential_configured: true,
+            initial_status: 'draft',
+            connection_status: 'untested',
+            writes: ['target.json', 'versions/<version_id>.json'],
+            starts_connection_test: false,
+          },
+          confirmation: { token: 'confirm_target', expires_at: '2026-09-08T01:10:00Z' },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => actionResponse({ target: TARGET_DETAIL }),
+      } as Response)
+
+    const preview = await previewTargetCreate(TARGET_INPUT)
+    expect(preview.preview.starts_connection_test).toBe(false)
+    await expect(confirmTargetCreate(
+      TARGET_INPUT,
+      preview.confirmation.token,
+      'create-target-test',
+    )).resolves.toEqual(TARGET_DETAIL)
+
+    const previewBody = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    const createBody = JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))
+    expect(previewBody).toMatchObject({ action: 'target.create', dry_run: true, payload: TARGET_INPUT })
+    expect(createBody).toMatchObject({
+      action: 'target.create',
+      dry_run: false,
+      confirmation_token: 'confirm_target',
+      idempotency_key: 'create-target-test',
     })
   })
 })

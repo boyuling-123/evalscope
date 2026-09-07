@@ -90,6 +90,7 @@ describe('Workbench navigation', () => {
     const paths = Array.from(container.querySelectorAll('nav a')).map((link) => link.getAttribute('href'))
     expect(paths).toEqual([
       `/project/${PROJECT_ID}/dashboard`,
+      `/project/${PROJECT_ID}/targets`,
       `/project/${PROJECT_ID}/runs`,
       `/project/${PROJECT_ID}/benchmarks`,
     ])
@@ -155,6 +156,10 @@ describe('Workbench page hierarchy', () => {
   it('keeps detail pages on their existing object heading', () => {
     expect(resolveWorkbenchPageMeta(`/project/${PROJECT_ID}/runs/quality/run/model`)).toMatchObject({
       titleKey: 'nav.runDetail',
+      showPageHeader: false,
+    })
+    expect(resolveWorkbenchPageMeta(`/project/${PROJECT_ID}/targets/tgt_aaaaaaaaaaaaaaaaaaaa`)).toMatchObject({
+      titleKey: 'nav.targetDetail',
       showPageHeader: false,
     })
   })

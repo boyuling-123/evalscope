@@ -1,6 +1,7 @@
 import {
   BarChart3,
   BookOpen,
+  Boxes,
   ListChecks,
   type LucideIcon,
 } from 'lucide-react'
@@ -36,6 +37,7 @@ export function getWorkbenchNavigation(projectId: string): WorkbenchNavGroup[] {
       key: 'evaluation',
       labelKey: 'nav.groupEvaluation',
       items: [
+        { to: projectRoute(projectId, '/targets'), labelKey: 'nav.targets', icon: Boxes },
         { to: projectRoute(projectId, '/runs'), labelKey: 'nav.runs', icon: ListChecks },
         { to: projectRoute(projectId, '/benchmarks'), labelKey: 'nav.benchmarks', icon: BookOpen },
       ],
@@ -74,6 +76,20 @@ const pageMetaMatchers: PageMetaMatcher[] = [
       descriptionKey: 'projects.description',
       showPageHeader: true,
       action: { labelKey: 'projects.createAction', to: '/projects?create=1' },
+    }),
+  },
+  {
+    matches: (pathname) => pathname.match(/^\/project\/([^/]+)\/targets\/[^/]+$/),
+    build: staticMeta('nav.groupEvaluation', 'nav.targetDetail', { showPageHeader: false }),
+  },
+  {
+    matches: (pathname) => pathname.match(/^\/project\/([^/]+)\/targets$/),
+    build: (match) => ({
+      sectionKey: 'nav.groupEvaluation',
+      titleKey: 'targets.title',
+      descriptionKey: 'targets.description',
+      showPageHeader: true,
+      action: { labelKey: 'targets.createAction', to: projectRoute(match[1], '/targets?create=1') },
     }),
   },
   {
@@ -139,6 +155,8 @@ export function resolveWorkbenchPageMeta(pathname: string): WorkbenchPageMeta | 
 export const workbenchPageMetadata: WorkbenchPageMeta[] = [
   resolveWorkbenchPageMeta('/projects'),
   resolveWorkbenchPageMeta('/project/prj_aaaaaaaaaaaaaaaaaaaa/dashboard'),
+  resolveWorkbenchPageMeta('/project/prj_aaaaaaaaaaaaaaaaaaaa/targets'),
+  resolveWorkbenchPageMeta('/project/prj_aaaaaaaaaaaaaaaaaaaa/targets/tgt_aaaaaaaaaaaaaaaaaaaa'),
   resolveWorkbenchPageMeta('/project/prj_aaaaaaaaaaaaaaaaaaaa/runs'),
   resolveWorkbenchPageMeta('/project/prj_aaaaaaaaaaaaaaaaaaaa/runs/new'),
   resolveWorkbenchPageMeta('/project/prj_aaaaaaaaaaaaaaaaaaaa/benchmarks'),

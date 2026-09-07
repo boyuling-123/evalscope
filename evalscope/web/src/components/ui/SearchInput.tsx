@@ -5,10 +5,12 @@ interface SearchInputProps {
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  ariaLabel?: string
+  clearLabel?: string
   className?: string
 }
 
-export default function SearchInput({ value, onChange, placeholder, className }: SearchInputProps) {
+export default function SearchInput({ value, onChange, placeholder, ariaLabel, clearLabel, className }: SearchInputProps) {
   return (
     <div className={cn('relative', className)}>
       {/* text-dim allowed: search input icons (DESIGN.md §Text) */}
@@ -21,6 +23,7 @@ export default function SearchInput({ value, onChange, placeholder, className }:
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder ?? 'Search...'}
+        aria-label={ariaLabel ?? placeholder ?? 'Search'}
         className={cn(
           'w-full pl-9 pr-8 py-2 text-sm rounded-[var(--radius-sm)]',
           'bg-[var(--bg-deep)] border border-[var(--border)] text-[var(--text)]',
@@ -34,7 +37,7 @@ export default function SearchInput({ value, onChange, placeholder, className }:
         <button
           onClick={() => onChange('')}
           className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-dim)] hover:text-[var(--text)] transition-colors cursor-pointer"
-          aria-label="Clear search"
+          aria-label={clearLabel ?? 'Clear search'}
         >
           <X size={14} />
         </button>

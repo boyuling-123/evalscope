@@ -57,6 +57,124 @@ export interface ProjectCreatePreview {
   confirmation: Confirmation
 }
 
+export type TargetType = 'model' | 'agent' | 'workflow' | 'skill' | 'algorithm'
+export type TargetStatus = 'draft' | 'ready' | 'unavailable' | 'archived'
+export type TargetConnectionStatus = 'untested' | 'passed' | 'failed'
+export type TargetModality = 'text' | 'image' | 'audio' | 'video'
+export type TargetAdapter =
+  | 'openai_chat_completions'
+  | 'openai_responses'
+  | 'http_json'
+  | 'evalscope_model'
+
+export interface TargetConnectionInput {
+  adapter: TargetAdapter
+  endpoint?: string
+  model_id?: string
+  credential_ref?: string
+  method: 'POST'
+  input_field: string
+  output_path: string
+  timeout_seconds: number
+}
+
+export interface TargetConnectionPublic extends Omit<TargetConnectionInput, 'credential_ref'> {
+  credential_configured: boolean
+}
+
+export interface TargetRuntimeBinding {
+  host_runtime: string
+  model_parameters_ref: string
+  tool_contract_ref: string
+  loading_method: 'file' | 'module'
+  input_preprocessor_ref: string
+  environment_notes?: string
+}
+
+export interface TargetManifest {
+  schema_version: number
+  id: string
+  project_id: string
+  name: string
+  type: TargetType
+  description?: string
+  capabilities: string[]
+  latest_version_id: string
+  status: TargetStatus
+  last_run_id?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface TargetVersion {
+  schema_version: number
+  id: string
+  target_id: string
+  version_number: number
+  label: string
+  provider: string
+  input_modalities: TargetModality[]
+  output_modalities: TargetModality[]
+  connection: TargetConnectionPublic
+  runtime_binding?: TargetRuntimeBinding
+  connection_status: TargetConnectionStatus
+  last_connected_at?: string
+  config_hash: string
+  created_at: string
+}
+
+export interface TargetVersionSummary {
+  id: string
+  version_number: number
+  label: string
+  provider: string
+  connection_status: TargetConnectionStatus
+  last_connected_at?: string
+  config_hash: string
+  created_at: string
+}
+
+export interface TargetSummary {
+  target: TargetManifest
+  latest_version: TargetVersion
+}
+
+export interface TargetDetail {
+  target: TargetManifest
+  version: TargetVersion
+  versions: TargetVersionSummary[]
+}
+
+export interface TargetCreateInput {
+  project_id: string
+  name: string
+  type: TargetType
+  description?: string
+  capabilities: string[]
+  version_label: string
+  provider: string
+  input_modalities: TargetModality[]
+  output_modalities: TargetModality[]
+  connection: TargetConnectionInput
+  runtime_binding?: TargetRuntimeBinding
+}
+
+export interface TargetCreatePreview {
+  preview: {
+    project_id: string
+    name: string
+    type: TargetType
+    version_label: string
+    adapter: TargetAdapter
+    credential_configured: boolean
+    initial_status: 'draft'
+    connection_status: 'untested'
+    writes: string[]
+    starts_connection_test: false
+  }
+  confirmation: Confirmation
+}
+
 export class WorkbenchActionError extends Error {
   readonly code: string
   readonly fieldErrors: ActionErrorDetail['field_errors']
@@ -147,4 +265,56 @@ export async function confirmProjectCreate(
     { confirmationToken, idempotencyKey, signal },
   )
   return response.data.project
+}
+
+export async function listTargets(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<{ targets: TargetSummary[]; warnings: string[] }> {
+  const response = await executeAction<{ targets: TargetSummary[]; count: number }>(
+    'target.list',
+    { project_id: projectId, limit: 200 },
+    { signal },
+  )
+  return { targets: response.data.targets, warnings: response.warnings }
+}
+
+export async function getTarget(
+  projectId: string,
+  targetId: string,
+  versionId?: string,
+  signal?: AbortSignal,
+): Promise<TargetDetail> {
+  const response = await executeAction<{ target: TargetDetail }>(
+    'target.get',
+    { project_id: projectId, target_id: targetId, version_id: versionId },
+    { signal },
+  )
+  return response.data.target
+}
+
+export async function previewTargetCreate(
+  input: TargetCreateInput,
+  signal?: AbortSignal,
+): Promise<TargetCreatePreview> {
+  const response = await executeAction<TargetCreatePreview>(
+    'target.create',
+    input,
+    { dryRun: true, signal },
+  )
+  return response.data
+}
+
+export async function confirmTargetCreate(
+  input: TargetCreateInput,
+  confirmationToken: string,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+): Promise<TargetDetail> {
+  const response = await executeAction<{ target: TargetDetail }>(
+    'target.create',
+    input,
+    { confirmationToken, idempotencyKey, signal },
+  )
+  return response.data.target
 }
