@@ -8,9 +8,11 @@ on:
       - 'evalscope/report/report.py'
       - 'evalscope/api/agent/trace.py'
       - 'evalscope/api/metric/**'
+      - 'evalscope/api/mixin/**'
       - 'evalscope/constants.py'
       - 'scripts/generate_web_api_contracts.py'
       - 'tests/service/test_api_contracts.py'
+      - 'tests/service/test_bootstrap.py'
       - 'tests/report/test_report_endpoints.py'
       - 'requirements/dev.txt'
       - 'requirements/service.txt'
@@ -26,9 +28,11 @@ on:
       - 'evalscope/report/report.py'
       - 'evalscope/api/agent/trace.py'
       - 'evalscope/api/metric/**'
+      - 'evalscope/api/mixin/**'
       - 'evalscope/constants.py'
       - 'scripts/generate_web_api_contracts.py'
       - 'tests/service/test_api_contracts.py'
+      - 'tests/service/test_bootstrap.py'
       - 'tests/report/test_report_endpoints.py'
       - 'requirements/dev.txt'
       - 'requirements/service.txt'
@@ -58,9 +62,11 @@ jobs:
 
       - run: npm ci
         working-directory: evalscope/web
+      - run: npm audit --audit-level=moderate
+        working-directory: evalscope/web
       - run: npm run contracts:check
         working-directory: evalscope/web
-      - run: python -m pytest tests/service/test_api_contracts.py tests/report/test_report_endpoints.py
+      - run: python -m pytest tests/service/test_bootstrap.py tests/service/test_api_contracts.py tests/report/test_report_endpoints.py
       - run: npm run lint
         working-directory: evalscope/web
       - run: npm test
