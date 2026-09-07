@@ -19,6 +19,8 @@ const PerfReportDetailPage = lazy(() => import('@/pages/PerfReportDetailPage'))
 const PerfComparePage = lazy(() => import('@/pages/PerfComparePage'))
 const ReportViewerPage = lazy(() => import('@/pages/ReportViewerPage'))
 const BenchmarksPage = lazy(() => import('@/pages/BenchmarksPage'))
+const TargetsPage = lazy(() => import('@/pages/TargetsPage'))
+const TargetDetailPage = lazy(() => import('@/pages/TargetDetailPage'))
 
 function ProjectRouteGuard() {
   const { projectId } = useParams()
@@ -50,6 +52,8 @@ function AppRoutes() {
           <Route element={<ProjectRouteGuard />}>
             <Route path="/project/:projectId" element={<ProjectIndexRedirect />} />
             <Route path="/project/:projectId/dashboard" element={<DashboardPage />} />
+            <Route path="/project/:projectId/targets" element={<TargetsPage />} />
+            <Route path="/project/:projectId/targets/:targetId" element={<TargetDetailPage />} />
             <Route path="/project/:projectId/runs" element={<RunsPage />} />
             <Route path="/project/:projectId/runs/new" element={<TasksPage />} />
             <Route path="/project/:projectId/runs/compare" element={<ComparePage />} />

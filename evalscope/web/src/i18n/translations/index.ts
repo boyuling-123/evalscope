@@ -22,6 +22,7 @@ import * as form from './form'
 import * as empty from './empty'
 import * as projects from './projects'
 import * as runs from './runs'
+import * as targets from './targets'
 
 export type { Locale, Dict }
 
@@ -48,6 +49,7 @@ const en: Dict = {
   empty: empty.en,
   projects: projects.en,
   runs: runs.en,
+  targets: targets.en,
 }
 
 const zh: Dict = {
@@ -73,6 +75,7 @@ const zh: Dict = {
   empty: empty.zh,
   projects: projects.zh,
   runs: runs.zh,
+  targets: targets.zh,
 }
 
 const translations: Record<Locale, Dict> = { en, zh }
