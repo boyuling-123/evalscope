@@ -13,18 +13,28 @@
 //     `default_config` / `pool_size` appear;
 //   - an invalid pool size (0) blocks submit and marks the field invalid.
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { LocaleProvider } from '@/contexts/LocaleContext'
+import type { TargetVersionCandidate } from '@/api/workbench'
 
 vi.mock('@/api/eval', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/eval')>()
   return { ...actual, listBenchmarks: vi.fn(() => new Promise(() => {})) }
 })
 
+vi.mock('@/api/workbench', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/workbench')>()
+  return { ...actual, listRunnableTargetVersions: vi.fn() }
+})
+
 import EvalConfigForm from './EvalConfigForm'
+import * as workbenchApi from '@/api/workbench'
 
 afterEach(cleanup)
+beforeEach(() => {
+  vi.mocked(workbenchApi.listRunnableTargetVersions).mockReset()
+})
 
 function renderForm(onSubmit = vi.fn()) {
   render(
@@ -102,5 +112,116 @@ describe('EvalConfigForm sandbox payload', () => {
 
     expect(onSubmit).not.toHaveBeenCalled()
     expect(screen.getByLabelText('Pool Size')).toHaveAttribute('aria-invalid', 'true')
+  })
+})
+
+describe('EvalConfigForm project target binding', () => {
+  const candidate: TargetVersionCandidate = {
+    target: {
+      schema_version: 1,
+      id: 'tgt_0123456789abcdefabcd',
+      project_id: 'prj_0123456789abcdefabcd',
+      name: '客服 Agent',
+      type: 'agent',
+      capabilities: ['问答'],
+      latest_version_id: 'tgv_0123456789abcdefabcd',
+      status: 'ready',
+      created_at: '2026-09-08T00:00:00Z',
+      updated_at: '2026-09-08T00:10:00Z',
+    },
+    version: {
+      schema_version: 1,
+      id: 'tgv_0123456789abcdefabcd',
+      target_id: 'tgt_0123456789abcdefabcd',
+      version_number: 1,
+      label: 'production-1',
+      provider: '本地服务',
+      input_modalities: ['text'],
+      output_modalities: ['text'],
+      connection: {
+        adapter: 'openai_responses',
+        endpoint: 'http://127.0.0.1:9000/v1/responses',
+        model_id: 'customer-agent',
+        method: 'POST',
+        input_field: 'input',
+        output_path: 'output_text',
+        timeout_seconds: 60,
+        credential_configured: true,
+      },
+      connection_status: 'passed',
+      last_connected_at: '2026-09-08T00:10:00Z',
+      config_hash: 'a'.repeat(64),
+      created_at: '2026-09-08T00:00:00Z',
+    },
+  }
+
+  it('submits stable target IDs and never exposes manual connection fields', async () => {
+    vi.mocked(workbenchApi.listRunnableTargetVersions).mockResolvedValue({
+      versions: [candidate],
+      warnings: [],
+    })
+    const onSubmit = vi.fn()
+    render(
+      <LocaleProvider>
+        <EvalConfigForm onSubmit={onSubmit} projectId={candidate.target.project_id} />
+      </LocaleProvider>,
+    )
+
+    await act(async () => { await Promise.resolve() })
+    const selector = screen.getByLabelText(/Verified Target Version/)
+    expect(screen.queryByLabelText(/Model Name/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Model API Key/)).not.toBeInTheDocument()
+    fireEvent.change(selector, { target: { value: candidate.version.id } })
+    fireEvent.change(screen.getByLabelText(/^Datasets/), { target: { value: 'gsm8k' } })
+    submit()
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      target_id: candidate.target.id,
+      target_version_id: candidate.version.id,
+      datasets: ['gsm8k'],
+    })
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('model')
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('api_url')
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('api_key')
+  })
+
+  it('honors an exact deep-linked target version after candidates load', async () => {
+    vi.mocked(workbenchApi.listRunnableTargetVersions).mockResolvedValue({
+      versions: [candidate],
+      warnings: [],
+    })
+    render(
+      <LocaleProvider>
+        <EvalConfigForm
+          onSubmit={vi.fn()}
+          projectId={candidate.target.project_id}
+          initialTargetId={candidate.target.id}
+          initialTargetVersionId={candidate.version.id}
+        />
+      </LocaleProvider>,
+    )
+
+    await act(async () => { await Promise.resolve() })
+    const selector = screen.getByLabelText(/Verified Target Version/)
+    expect(selector).toHaveValue(candidate.version.id)
+    expect(screen.getByText(candidate.version.id)).toBeInTheDocument()
+    expect(screen.getByText('openai_responses')).toBeInTheDocument()
+  })
+
+  it('blocks execution and links to target setup when no verified version exists', async () => {
+    vi.mocked(workbenchApi.listRunnableTargetVersions).mockResolvedValue({ versions: [], warnings: [] })
+    render(
+      <LocaleProvider>
+        <EvalConfigForm onSubmit={vi.fn()} projectId={candidate.target.project_id} />
+      </LocaleProvider>,
+    )
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.getByRole('button', { name: 'Start Evaluation' })).toBeDisabled()
+    expect(screen.getByRole('link', { name: 'Manage targets' })).toHaveAttribute(
+      'href',
+      `/project/${candidate.target.project_id}/targets`,
+    )
   })
 })

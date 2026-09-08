@@ -142,6 +142,11 @@ export interface TargetSummary {
   latest_version: TargetVersion
 }
 
+export interface TargetVersionCandidate {
+  target: TargetManifest
+  version: TargetVersion
+}
+
 export interface TargetDetail {
   target: TargetManifest
   version: TargetVersion
@@ -354,6 +359,19 @@ export async function listTargets(
     { signal },
   )
   return { targets: response.data.targets, warnings: response.warnings }
+}
+
+export async function listRunnableTargetVersions(
+  projectId: string,
+  adapters: TargetAdapter[] = [],
+  signal?: AbortSignal,
+): Promise<{ versions: TargetVersionCandidate[]; warnings: string[] }> {
+  const response = await executeAction<{ versions: TargetVersionCandidate[]; count: number }>(
+    'target.version.list',
+    { project_id: projectId, adapters, limit: 500 },
+    { signal },
+  )
+  return { versions: response.data.versions, warnings: response.warnings }
 }
 
 export async function getTarget(

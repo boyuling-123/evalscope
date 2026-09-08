@@ -49,6 +49,7 @@ jobs:
           tests/service/test_bootstrap.py
           tests/service/test_api_contracts.py
           tests/service/test_workbench_actions.py
+          tests/service/test_project_run_scope.py
           tests/service/test_process_stderr.py
           tests/service/test_process_stop.py
           tests/cli/test_service.py

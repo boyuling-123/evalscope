@@ -25,7 +25,7 @@ def test_workbench_action_endpoint_uses_explicit_workspace(tmp_path):
     )
 
     assert response.status_code == 200
-    assert response.get_json()['result']['data']['count'] == 9
+    assert response.get_json()['result']['data']['count'] == 10
     assert app.config['WORKBENCH_ROOT'] == str(tmp_path / 'workspace')
 
 

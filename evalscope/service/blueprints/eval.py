@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict, List
 
 from flask import Blueprint, current_app, jsonify, request, send_file
+from pydantic import SecretStr, ValidationError
 from tabulate import tabulate
 
 from evalscope.config import TaskConfig
@@ -17,6 +18,14 @@ from evalscope.service.api_models import (
     TaskStatusResponse,
 )
 from evalscope.utils.logger import get_logger
+from evalscope.workbench.errors import WorkbenchActionError
+from evalscope.workbench.runs import RunBindingStore, RunTargetBinding
+from evalscope.workbench.targets import (
+    TargetDetail,
+    TargetGetPayload,
+    TargetStore,
+    resolve_target_credential,
+)
 
 from ..project_scope import ProjectScopeError, resolve_runs_root
 from ..responses import json_response
@@ -79,7 +88,8 @@ def _build_result_table(work_dir: str) -> str:
         return ''
 
 
-_REQUIRED_FIELDS = ['model', 'datasets', 'api_url']
+_BASE_REQUIRED_FIELDS = ['datasets']
+_LEGACY_REQUIRED_FIELDS = ['model', 'api_url']
 
 
 class RequestValidationError(Exception):
@@ -101,6 +111,11 @@ def _handle_project_scope_error(exc: ProjectScopeError):
     return jsonify({'error': exc.message}), exc.status_code
 
 
+@bp_eval.errorhandler(WorkbenchActionError)
+def _handle_workbench_action_error(exc: WorkbenchActionError):
+    return jsonify({'error': exc.message, 'code': exc.code}), exc.status_code
+
+
 def _parse_request() -> tuple[dict, str, str | None]:
     """Validate the request body and return (data, task_id, project_id).
 
@@ -115,7 +130,7 @@ def _parse_request() -> tuple[dict, str, str | None]:
 
     project_id = data.pop('project_id', None)
 
-    for field in _REQUIRED_FIELDS:
+    for field in _BASE_REQUIRED_FIELDS:
         if field not in data:
             raise RequestValidationError(f'{field} is required')
 
@@ -129,6 +144,122 @@ def _parse_request() -> tuple[dict, str, str | None]:
         raise RequestValidationError(str(e)) from e
 
     return data, task_id, project_id
+
+
+def _target_store() -> TargetStore:
+    workspace_root = current_app.config.get('WORKBENCH_ROOT')
+    if not workspace_root:
+        raise RequestValidationError('Workbench project storage is not configured', 500)
+    return TargetStore(workspace_root)
+
+
+def _resolve_target_request(
+    data: dict,
+    project_id: str | None,
+    task_id: str,
+    work_dir: str,
+    *,
+    allow_legacy_project_resume: bool = False,
+) -> tuple[dict, RunTargetBinding | None, TargetDetail | None, str | None]:
+    """Replace client connection fields with one verified server-side version.
+
+    A project run may name only stable IDs. Connection details and credentials
+    always come from the immutable version stored by the local workbench.
+    """
+    resolved = dict(data)
+    target_id = resolved.pop('target_id', None)
+    target_version_id = resolved.pop('target_version_id', None)
+    existing = RunBindingStore.read(work_dir) if project_id else None
+
+    if existing is not None:
+        if existing.project_id != project_id:
+            raise WorkbenchActionError(
+                code='STORAGE_CORRUPTED',
+                message='运行绑定的项目身份与当前目录不一致，请检查文件完整性。',
+                status_code=500,
+            )
+        if target_id is not None and target_id != existing.target_id:
+            raise WorkbenchActionError(
+                code='RUN_TARGET_BINDING_CONFLICT',
+                message='该运行已锁定其他评测对象，不能在恢复时替换。',
+                status_code=409,
+            )
+        if target_version_id is not None and target_version_id != existing.target_version_id:
+            raise WorkbenchActionError(
+                code='RUN_TARGET_BINDING_CONFLICT',
+                message='该运行已锁定其他对象版本，不能在恢复时替换。',
+                status_code=409,
+            )
+        target_id = existing.target_id
+        target_version_id = existing.target_version_id
+
+    if (target_id is None) != (target_version_id is None):
+        raise RequestValidationError('target_id and target_version_id must be provided together')
+
+    if target_id is None:
+        if project_id and not allow_legacy_project_resume:
+            raise RequestValidationError('target_id and target_version_id are required for a new project evaluation')
+        for field in _LEGACY_REQUIRED_FIELDS:
+            if field not in resolved:
+                raise RequestValidationError(f'{field} is required')
+        return resolved, None, None, None
+
+    if not project_id:
+        raise RequestValidationError('project_id is required when selecting a target version')
+
+    try:
+        payload = TargetGetPayload(
+            project_id=project_id,
+            target_id=target_id,
+            version_id=target_version_id,
+        )
+    except ValidationError:
+        raise RequestValidationError('target_id or target_version_id format is invalid') from None
+
+    store = _target_store()
+    detail = store.get(payload)
+    if existing is not None and existing.target_config_hash != detail.version.config_hash:
+        raise WorkbenchActionError(
+            code='STORAGE_CORRUPTED',
+            message='运行锁定版本的配置指纹已变化，请检查对象版本文件完整性。',
+            status_code=500,
+        )
+    if detail.version.connection_status != 'passed':
+        raise WorkbenchActionError(
+            code='TARGET_VERSION_NOT_VERIFIED',
+            message='只有真实试调通过的对象版本才能创建正式运行。',
+            status_code=409,
+            details={'target_id': target_id, 'target_version_id': target_version_id},
+        )
+
+    connection = detail.version.connection
+    eval_type_by_adapter = {
+        'openai_chat_completions': EvalType.OPENAI_API,
+        'openai_responses': EvalType.OPENAI_RESPONSES_API,
+    }
+    eval_type = eval_type_by_adapter.get(connection.adapter)
+    if eval_type is None or not connection.endpoint or not connection.model_id:
+        raise WorkbenchActionError(
+            code='TARGET_ADAPTER_NOT_RUNNABLE',
+            message='该对象版本尚不能由模型评测执行器运行，请选择 OpenAI Chat Completions 或 Responses 适配器。',
+            status_code=409,
+        )
+
+    # Discard every browser-supplied connection field before applying the
+    # authoritative version. This prevents a UI or API caller from displaying
+    # one version while executing another endpoint or secret.
+    for field in ('model', 'model_id', 'api_url', 'api_key', 'eval_type'):
+        resolved.pop(field, None)
+    credential = resolve_target_credential(connection.credential_ref)
+    resolved.update(
+        {
+            'model': connection.model_id,
+            'model_id': connection.model_id,
+            'api_url': connection.endpoint,
+            'eval_type': eval_type,
+        }
+    )
+    return resolved, RunTargetBinding.from_target(task_id, detail), detail, credential
 
 
 def _build_task_config(data: dict) -> TaskConfig:
@@ -207,8 +338,15 @@ def run_evaluation():
     """
     data, task_id, project_id = _parse_request()
 
+    work_dir = os.path.join(resolve_runs_root(project_id, create=True), task_id)
+    data, binding, target_detail, credential = _resolve_target_request(data, project_id, task_id, work_dir)
     task_config = _build_task_config(data)
-    task_config.work_dir = os.path.join(resolve_runs_root(project_id, create=True), task_id)
+    if credential is not None:
+        task_config.api_key = SecretStr(credential)
+    task_config.work_dir = work_dir
+    if binding is not None and target_detail is not None:
+        RunBindingStore.bind(work_dir, binding)
+        _target_store().record_run(project_id, target_detail.target.id, task_id)
 
     logger.info(f'[{task_id}] Running evaluation task for model: {task_config.model}')
     logger.info(f'[{task_id}] Datasets: {task_config.datasets}')
@@ -261,10 +399,22 @@ def resume_evaluation():
     if not os.path.isdir(work_dir):
         return jsonify({'error': f'Output directory not found for task_id: {task_id}'}), 404
 
+    data, binding, target_detail, credential = _resolve_target_request(
+        data,
+        project_id,
+        task_id,
+        work_dir,
+        allow_legacy_project_resume=True,
+    )
     task_config = _build_task_config(data)
+    if credential is not None:
+        task_config.api_key = SecretStr(credential)
     task_config.work_dir = work_dir
     task_config.use_cache = work_dir
     task_config.rerun_review = True
+    if binding is not None and target_detail is not None:
+        RunBindingStore.bind(work_dir, binding)
+        _target_store().record_run(project_id, target_detail.target.id, task_id)
 
     logger.info(f'[{task_id}] Running resume task, work_dir: {work_dir}')
     logger.info(f'[{task_id}] Model: {task_config.model}, Datasets: {task_config.datasets}')

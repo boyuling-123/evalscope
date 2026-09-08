@@ -2,6 +2,11 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useLocale } from '@/contexts/LocaleContext'
 import { useAsyncResource } from '@/hooks/useAsyncResource'
 import { listBenchmarks } from '@/api/eval'
+import {
+  listRunnableTargetVersions,
+  type TargetAdapter,
+  type TargetVersionCandidate,
+} from '@/api/workbench'
 import Field from '@/components/ui/Field'
 import { inputClass } from '@/components/ui/formStyles'
 import {
@@ -24,13 +29,19 @@ interface Props {
    * key in a URL ends up in history and in server logs.
    */
   initialModel?: string
+  projectId?: string
+  initialTargetId?: string
+  initialTargetVersionId?: string
 }
 
 /** Stable placeholder so an unresolved suggestion list keeps a single identity. */
 const EMPTY_NAMES: string[] = []
+const EMPTY_TARGET_VERSIONS: TargetVersionCandidate[] = []
+const NATIVE_RUN_ADAPTERS: TargetAdapter[] = ['openai_chat_completions', 'openai_responses']
 
 /** Stable field ids, reused as label/error association targets and focus targets. */
 const IDS = {
+  targetVersion: 'eval-targetVersion',
   model: 'eval-model',
   datasets: 'eval-datasets',
   apiUrl: 'eval-apiUrl',
@@ -54,6 +65,7 @@ const IDS = {
 
 /** DOM order of focusable fields, drives first-invalid focus on submit. */
 const DOM_ORDER: string[] = [
+  IDS.targetVersion,
   IDS.model,
   IDS.datasets,
   IDS.apiUrl,
@@ -82,8 +94,17 @@ const MORE_PARAMS_IDS: string[] = [
   IDS.sandboxPool,
 ]
 
-export default function EvalConfigForm({ onSubmit, disabled, initialDataset, initialModel }: Props) {
-  const { t } = useLocale()
+export default function EvalConfigForm({
+  onSubmit,
+  disabled,
+  initialDataset,
+  initialModel,
+  projectId,
+  initialTargetId,
+  initialTargetVersionId,
+}: Props) {
+  const { t, locale } = useLocale()
+  const [selectedTargetVersionId, setSelectedTargetVersionId] = useState('')
   const [model, setModel] = useState(initialModel ?? '')
   const [apiUrl, setApiUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -109,10 +130,31 @@ export default function EvalConfigForm({ onSubmit, disabled, initialDataset, ini
     moreParamsIds: MORE_PARAMS_IDS,
   })
 
+  const targetVersions = useAsyncResource(
+    async (signal) => projectId
+      ? listRunnableTargetVersions(projectId, NATIVE_RUN_ADAPTERS, signal)
+      : { versions: [], warnings: [] },
+    [projectId],
+    { enabled: Boolean(projectId), fallbackMessage: t('eval.targetVersionLoadFailed') },
+  )
+  const runnableTargetVersions = targetVersions.data?.versions ?? EMPTY_TARGET_VERSIONS
+  const manuallySelectedTargetVersion = runnableTargetVersions.find(
+    (candidate) => candidate.version.id === selectedTargetVersionId,
+  )
+  const deepLinkedTargetVersion = runnableTargetVersions.find((candidate) => (
+    candidate.target.id === initialTargetId
+    && candidate.version.id === initialTargetVersionId
+  ))
+  const selectedTargetVersion = manuallySelectedTargetVersion ?? deepLinkedTargetVersion
+
   const validate = (): Record<string, string> => {
     const errors: Record<string, string> = {}
 
-    if (!model.trim()) errors[IDS.model] = FORM_MESSAGE_KEYS.required
+    if (projectId) {
+      if (!selectedTargetVersion) errors[IDS.targetVersion] = FORM_MESSAGE_KEYS.required
+    } else if (!model.trim()) {
+      errors[IDS.model] = FORM_MESSAGE_KEYS.required
+    }
     if (!datasets.trim()) errors[IDS.datasets] = FORM_MESSAGE_KEYS.required
 
     Object.assign(errors, collectNumericErrors([
@@ -140,13 +182,18 @@ export default function EvalConfigForm({ onSubmit, disabled, initialDataset, ini
 
   const buildConfig = () => {
     const config: Record<string, unknown> = {
-      model,
       datasets: datasets.split(',').map((s) => s.trim()).filter(Boolean),
       limit: limit ? Number(limit) : undefined,
       eval_batch_size: evalBatchSize ? Number(evalBatchSize) : undefined,
     }
-    if (apiUrl) config.api_url = apiUrl
-    if (apiKey) config.api_key = apiKey
+    if (projectId && selectedTargetVersion) {
+      config.target_id = selectedTargetVersion.target.id
+      config.target_version_id = selectedTargetVersion.version.id
+    } else {
+      config.model = model
+      if (apiUrl) config.api_url = apiUrl
+      if (apiKey) config.api_key = apiKey
+    }
     if (repeats && Number(repeats) > 1) config.repeats = Number(repeats)
     if (timeout) config.timeout = Number(timeout)
     if (stream) config.stream = true
@@ -385,15 +432,81 @@ export default function EvalConfigForm({ onSubmit, disabled, initialDataset, ini
       showMore={showMore}
       onToggleMore={toggleMore}
       submitLabel={t('eval.startEval')}
-      disabled={disabled}
+      disabled={disabled || Boolean(projectId && (targetVersions.loading || runnableTargetVersions.length === 0))}
       moreParams={MORE_PARAMS}
     >
-      <ModelField
+      {projectId ? (
+        <>
+          <Field
+            id={IDS.targetVersion}
+            name="target_version_id"
+            labelKey="eval.targetVersion"
+            required
+            error={errMsg(IDS.targetVersion)}
+            className="md:col-span-2"
+          >
+            {(aria) => (
+              <select
+                {...aria}
+                value={selectedTargetVersion?.version.id ?? ''}
+                onChange={(event) => {
+                  setSelectedTargetVersionId(event.target.value)
+                  clearErr(IDS.targetVersion)
+                }}
+                disabled={targetVersions.loading || runnableTargetVersions.length === 0}
+                className={inputClass(errMsg(IDS.targetVersion))}
+              >
+                <option value="">
+                  {targetVersions.loading
+                    ? t('eval.targetVersionLoading')
+                    : t('eval.targetVersionPlaceholder')}
+                </option>
+                {runnableTargetVersions.map((candidate) => (
+                  <option key={candidate.version.id} value={candidate.version.id}>
+                    {candidate.target.name} · {candidate.version.label} #{candidate.version.version_number}
+                    {candidate.version.connection.model_id ? ` · ${candidate.version.connection.model_id}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+          {targetVersions.error && (
+            <p role="alert" className="md:col-span-2 text-sm text-[var(--danger)]">{targetVersions.error}</p>
+          )}
+          {!targetVersions.loading && !targetVersions.error && runnableTargetVersions.length === 0 && (
+            <p className="md:col-span-2 rounded-[var(--radius-sm)] border border-[var(--warning-border)] bg-[var(--warning-bg)] px-3 py-2 text-sm text-[var(--warning-text)]">
+              {t('eval.noRunnableTargets')}{' '}
+              <a className="font-medium underline" href={`/project/${encodeURIComponent(projectId)}/targets`}>
+                {t('eval.manageTargets')}
+              </a>
+            </p>
+          )}
+          {targetVersions.data?.warnings.map((warning) => (
+            <p key={warning} className="md:col-span-2 text-xs text-[var(--warning-text)]">{warning}</p>
+          ))}
+          {selectedTargetVersion && (
+            <div className="md:col-span-2 grid gap-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-deep)] p-3 text-xs sm:grid-cols-2" aria-live="polite">
+              <div><span className="text-[var(--text-dim)]">{t('eval.boundVersionId')}</span><p className="mt-1 break-all font-mono text-[var(--text)]">{selectedTargetVersion.version.id}</p></div>
+              <div><span className="text-[var(--text-dim)]">{t('eval.boundModel')}</span><p className="mt-1 font-mono text-[var(--text)]">{selectedTargetVersion.version.connection.model_id}</p></div>
+              <div><span className="text-[var(--text-dim)]">{t('eval.boundAdapter')}</span><p className="mt-1 font-mono text-[var(--text)]">{selectedTargetVersion.version.connection.adapter}</p></div>
+              <div><span className="text-[var(--text-dim)]">{t('eval.boundVerifiedAt')}</span><p className="mt-1 text-[var(--text)]">{selectedTargetVersion.version.last_connected_at ? new Date(selectedTargetVersion.version.last_connected_at).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US') : '—'}</p></div>
+              <div className="sm:col-span-2"><span className="text-[var(--text-dim)]">{t('eval.boundConfigHash')}</span><p className="mt-1 break-all font-mono text-[var(--text)]">{selectedTargetVersion.version.config_hash}</p></div>
+              <p className="sm:col-span-2 text-[var(--text-muted)]">{t('eval.boundConnectionHelp')}</p>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <ModelField
           id={IDS.model}
           value={model}
           error={errMsg(IDS.model)}
           onChange={(value) => { setModel(value); clearErr(IDS.model) }}
-        />
+          />
+          <ApiUrlField id={IDS.apiUrl} name="api_url" value={apiUrl} onChange={setApiUrl} />
+          <ApiKeyField id={IDS.apiKey} value={apiKey} onChange={setApiKey} />
+        </>
+      )}
 
         {/* Datasets with autocomplete */}
         <Field id={IDS.datasets} name="datasets" labelKey="eval.datasets" required error={errMsg(IDS.datasets)} autoComplete="off" className="relative">
@@ -435,9 +548,6 @@ export default function EvalConfigForm({ onSubmit, disabled, initialDataset, ini
             </div>
           )}
         </Field>
-
-        <ApiUrlField id={IDS.apiUrl} name="api_url" value={apiUrl} onChange={setApiUrl} />
-        <ApiKeyField id={IDS.apiKey} value={apiKey} onChange={setApiKey} />
 
         <Field id={IDS.limit} name="limit" labelKey="eval.limit" error={errMsg(IDS.limit)}>
           {(aria) => (
