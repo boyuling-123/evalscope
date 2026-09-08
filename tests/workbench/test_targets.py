@@ -346,6 +346,52 @@ def test_target_version_create_preserves_old_version_and_resets_candidate_status
     assert 'EVAL_TARGET_API_KEY' not in created.model_dump_json()
 
 
+def test_runnable_version_list_keeps_verified_history_when_latest_is_draft(tmp_path, monkeypatch):
+    registry = create_default_registry(str(tmp_path))
+    project_id = create_project(registry)
+    target = create_target(registry, project_id)
+    first = target.result.data['target']['version']
+    monkeypatch.setattr(
+        'evalscope.workbench.targets._perform_http_trial',
+        lambda *_args: {
+            'status': 'passed',
+            'http_status': 200,
+            'duration_ms': 4,
+            'output_type': 'str',
+            'output_hash': content_hash('ok'),
+        },
+    )
+    check = connection_check_request(target)
+    preview = registry.execute(check)
+    assert registry.execute({
+        **check,
+        'dry_run': False,
+        'confirmation_token': preview.result.data['confirmation']['token'],
+    }).ok
+    created = confirmed_write(
+        registry,
+        'target.version.create',
+        version_payload(target),
+        'create-unverified-latest-version',
+    )
+    assert created.result.data['target']['version']['connection_status'] == 'untested'
+
+    response = registry.execute(action_request(
+        'target.version.list',
+        {
+            'project_id': project_id,
+            'adapters': ['http_json'],
+        },
+    ))
+
+    assert response.ok
+    assert response.result.data['count'] == 1
+    assert response.result.data['versions'][0]['version']['id'] == first['id']
+    assert response.result.data['versions'][0]['version']['connection_status'] == 'passed'
+    assert 'credential_ref' not in response.model_dump_json()
+    assert 'EVAL_TARGET_API_KEY' not in response.model_dump_json()
+
+
 def test_target_version_create_rejects_stale_base_and_missing_inherited_credential(tmp_path):
     registry = create_default_registry(str(tmp_path))
     project_id = create_project(registry)

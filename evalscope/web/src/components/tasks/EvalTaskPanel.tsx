@@ -10,9 +10,11 @@ export default function EvalTaskPanel() {
   const queryParams = useQueryParams()
   const { projectId } = useParams()
   const initialDataset = queryParams.get('dataset')
-  // Lets the dashboard hand over a past run's model and datasets so it can be repeated. Secrets are
-  // never carried this way -- the API key stays a field the user fills in.
+  // Legacy routes may prefill a model. Project routes use stable target IDs instead,
+  // and no secret is ever carried in the URL.
   const initialModel = queryParams.get('model')
+  const initialTargetId = queryParams.get('targetId')
+  const initialTargetVersionId = queryParams.get('targetVersionId')
 
   return (
     <TaskRunnerShell
@@ -33,6 +35,9 @@ export default function EvalTaskPanel() {
           disabled={disabled}
           initialDataset={initialDataset}
           initialModel={initialModel}
+          projectId={projectId}
+          initialTargetId={initialTargetId}
+          initialTargetVersionId={initialTargetVersionId}
         />
       )}
     />

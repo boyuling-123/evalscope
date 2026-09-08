@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowLeft, Box, GitBranchPlus, KeyRound, LockKeyhole, RefreshCw, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, Box, GitBranchPlus, KeyRound, LockKeyhole, Play, RefreshCw, ShieldAlert } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { getTarget, type TargetStatus } from '@/api/workbench'
 import { useLocale } from '@/contexts/LocaleContext'
@@ -72,6 +72,9 @@ export default function TargetDetailPage() {
   }
 
   const { target, version, versions } = detail
+  const canCreateRun = version.connection_status === 'passed'
+    && (version.connection.adapter === 'openai_chat_completions' || version.connection.adapter === 'openai_responses')
+  const createRunPath = `${projectRoute(validProjectId, '/runs/new')}?tab=eval&targetId=${encodeURIComponent(target.id)}&targetVersionId=${encodeURIComponent(version.id)}`
   const changeTab = (key: string) => {
     const tab = key as DetailTab
     const next = new URLSearchParams(searchParams)
@@ -202,7 +205,14 @@ export default function TargetDetailPage() {
           <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] border border-[var(--border)] bg-[var(--bg-card)] text-[var(--accent)]"><Box size={19} aria-hidden="true" /></span><div className="min-w-0"><h1 className="truncate text-xl font-semibold tracking-[-0.02em] text-[var(--text)] sm:text-[22px]">{target.name}</h1><p className="mt-0.5 truncate font-mono text-xs text-[var(--text-dim)]">{target.id}</p></div></div>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--text-muted)]">{target.description || t('targets.noDescription')}</p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2"><Badge>{targetTypeLabel(t, target.type)}</Badge><Badge>{version.label} · #{version.version_number}</Badge>{version.id === target.latest_version_id ? <Badge variant={statusVariant(target.status)}>{targetStatusLabel(t, target.status)}</Badge> : <Badge>{t('targets.historicalVersionBadge')}</Badge>}<Badge variant={version.connection_status === 'passed' ? 'success' : version.connection_status === 'failed' ? 'danger' : 'warning'}>{targetConnectionLabel(t, version.connection_status)}</Badge></div>
+        <div className="flex shrink-0 flex-col items-start gap-3 sm:items-end">
+          <div className="flex flex-wrap gap-2"><Badge>{targetTypeLabel(t, target.type)}</Badge><Badge>{version.label} · #{version.version_number}</Badge>{version.id === target.latest_version_id ? <Badge variant={statusVariant(target.status)}>{targetStatusLabel(t, target.status)}</Badge> : <Badge>{t('targets.historicalVersionBadge')}</Badge>}<Badge variant={version.connection_status === 'passed' ? 'success' : version.connection_status === 'failed' ? 'danger' : 'warning'}>{targetConnectionLabel(t, version.connection_status)}</Badge></div>
+          {canCreateRun && (
+            <Link to={createRunPath} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--text-on-filled)] hover:bg-[var(--accent-dark)]">
+              <Play size={15} aria-hidden="true" />{t('targets.createRunFromVersion')}
+            </Link>
+          )}
+        </div>
       </header>
 
       <Tabs

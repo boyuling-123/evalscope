@@ -5,6 +5,7 @@ import {
   confirmTargetVersionCreate,
   confirmProjectCreate,
   getTarget,
+  listRunnableTargetVersions,
   listTargets,
   listProjects,
   previewProjectCreate,
@@ -214,6 +215,32 @@ describe('workbench Action client', () => {
     expect(listBody).toMatchObject({ action: 'target.list', payload: { project_id: PROJECT.id, limit: 200 } })
     expect(getBody).toMatchObject({ action: 'target.get', payload: { project_id: PROJECT.id, target_id: TARGET_DETAIL.target.id } })
     expect(JSON.stringify(TARGET_DETAIL)).not.toContain('TARGET_API_KEY')
+  })
+
+  it('lists only runnable target versions for the run selector', async () => {
+    const candidate = {
+      target: { ...TARGET_DETAIL.target, status: 'ready' as const },
+      version: { ...TARGET_DETAIL.version, connection_status: 'passed' as const },
+    }
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => actionResponse({ versions: [candidate], count: 1 }),
+    } as Response)
+
+    await expect(listRunnableTargetVersions(
+      PROJECT.id,
+      ['openai_chat_completions', 'openai_responses'],
+    )).resolves.toEqual({ versions: [candidate], warnings: [] })
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body).toMatchObject({
+      action: 'target.version.list',
+      payload: {
+        project_id: PROJECT.id,
+        adapters: ['openai_chat_completions', 'openai_responses'],
+        limit: 500,
+      },
+    })
   })
 
   it('previews and confirms a target draft through the guarded Action flow', async () => {

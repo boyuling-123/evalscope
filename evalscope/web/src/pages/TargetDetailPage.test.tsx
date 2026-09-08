@@ -146,4 +146,29 @@ describe('TargetDetailPage', () => {
     expect(document.body.textContent).not.toContain('env:')
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
+
+  it('deep-links a verified compatible version into the run form', async () => {
+    const verified: TargetDetail = {
+      ...DETAIL,
+      target: { ...DETAIL.target, status: 'ready' },
+      version: {
+        ...DETAIL.version,
+        connection: {
+          ...DETAIL.version.connection,
+          adapter: 'openai_responses',
+          model_id: 'customer-agent',
+        },
+        connection_status: 'passed',
+        last_connected_at: '2026-09-08T02:00:00Z',
+      },
+    }
+    mocks.getTarget.mockResolvedValue(verified)
+    renderPage()
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.getByRole('link', { name: '基于此版本新建运行' })).toHaveAttribute(
+      'href',
+      `/project/${PROJECT_ID}/runs/new?tab=eval&targetId=${TARGET_ID}&targetVersionId=${verified.version.id}`,
+    )
+  })
 })

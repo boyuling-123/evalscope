@@ -143,6 +143,13 @@ class TargetSummary(WorkbenchModel):
     latest_version: TargetVersion
 
 
+class TargetVersionCandidate(WorkbenchModel):
+    """A connection-tested immutable version that can be selected for a run."""
+
+    target: TargetManifest
+    version: TargetVersion
+
+
 class TargetDetail(WorkbenchModel):
     target: TargetManifest
     version: TargetVersion
@@ -235,6 +242,13 @@ class TargetListPayload(WorkbenchModel):
     limit: int = Field(default=100, ge=1, le=200)
 
 
+class TargetVersionListPayload(WorkbenchModel):
+    project_id: str = Field(pattern=r'^prj_[a-f0-9]{20}$')
+    types: list[TargetType] = Field(default_factory=list, max_length=5)
+    adapters: list[TargetAdapter] = Field(default_factory=list, max_length=4)
+    limit: int = Field(default=200, ge=1, le=500)
+
+
 class TargetGetPayload(WorkbenchModel):
     project_id: str = Field(pattern=r'^prj_[a-f0-9]{20}$')
     target_id: str = Field(pattern=r'^tgt_[a-f0-9]{20}$')
@@ -278,7 +292,7 @@ class _NoRedirectHandler(urllib_request.HTTPRedirectHandler):
         return None
 
 
-def _resolve_credential(reference: Optional[str]) -> Optional[str]:
+def resolve_target_credential(reference: Optional[str]) -> Optional[str]:
     if reference is None:
         return None
     if reference.startswith('env:'):
@@ -382,7 +396,7 @@ def _perform_http_trial(version: TargetVersion, sample_input: Any) -> dict[str, 
     if version.connection.adapter == 'evalscope_model':
         return {'status': 'failed', 'error_code': 'ADAPTER_TRIAL_NOT_SUPPORTED', 'duration_ms': 0}
 
-    credential = _resolve_credential(version.connection.credential_ref)
+    credential = resolve_target_credential(version.connection.credential_ref)
     headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
     if credential:
         headers['Authorization'] = f'Bearer {credential}'
@@ -661,6 +675,45 @@ class TargetStore:
         records.sort(key=lambda record: record.target.updated_at, reverse=True)
         return records[: payload.limit], warnings
 
+    def list_runnable_versions(
+        self,
+        payload: TargetVersionListPayload,
+    ) -> tuple[list[TargetVersionCandidate], list[str]]:
+        """Return every historical version that passed a real connection trial.
+
+        The latest version may still be a draft. Scanning immutable version files
+        keeps a previously verified version selectable instead of accidentally
+        removing it from the formal candidate pool.
+        """
+        project = self.projects.get(payload.project_id)
+        targets_root = Path(project.root_path) / 'targets'
+        if not targets_root.is_dir():
+            return [], []
+
+        records: list[TargetVersionCandidate] = []
+        warnings: list[str] = []
+        for path in sorted(targets_root.glob('tgt_*/target.json')):
+            try:
+                manifest = self._read_manifest(path, payload.project_id)
+                if manifest.status == 'archived' or (payload.types and manifest.type not in payload.types):
+                    continue
+                for version in self._list_versions(path.parent, manifest.id):
+                    if version.connection_status != 'passed':
+                        continue
+                    if payload.adapters and version.connection.adapter not in payload.adapters:
+                        continue
+                    records.append(TargetVersionCandidate(target=manifest, version=version))
+            except WorkbenchActionError:
+                warnings.append(f'已跳过损坏的评测对象：{path.parent.name}')
+        records.sort(
+            key=lambda record: (
+                record.version.last_connected_at or record.version.created_at,
+                record.version.version_number,
+            ),
+            reverse=True,
+        )
+        return records[: payload.limit], warnings
+
     def get(self, payload: TargetGetPayload) -> TargetDetail:
         project = self.projects.get(payload.project_id)
         target_root = self._target_root(Path(project.root_path), payload.target_id)
@@ -746,6 +799,15 @@ class TargetStore:
             )
             atomic_write_json(target_root / 'target.json', manifest.model_dump(mode='json', exclude_none=True))
         return check
+
+    def record_run(self, project_id: str, target_id: str, run_id: str) -> TargetManifest:
+        """Update the mutable manifest pointer without changing any version."""
+        detail = self.get(TargetGetPayload(project_id=project_id, target_id=target_id))
+        target_root = self._target_root(Path(self.projects.get(project_id).root_path), target_id)
+        now = datetime.now(timezone.utc).isoformat()
+        manifest = detail.target.model_copy(update={'last_run_id': run_id, 'updated_at': now})
+        atomic_write_json(target_root / 'target.json', manifest.model_dump(mode='json', exclude_none=True))
+        return manifest
 
     @staticmethod
     def _config_hash(payload: TargetCreatePayload) -> str:

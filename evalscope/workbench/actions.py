@@ -30,7 +30,9 @@ from .targets import (
     TargetListPayload,
     TargetStore,
     TargetSummary,
+    TargetVersionCandidate,
     TargetVersionCreatePayload,
+    TargetVersionListPayload,
 )
 
 logger = get_logger()
@@ -279,6 +281,12 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
         connection['credential_configured'] = bool(connection.pop('credential_ref', None))
         return data
 
+    def public_target_version_candidate(candidate: TargetVersionCandidate) -> Dict[str, Any]:
+        data = candidate.model_dump(mode='json', exclude_none=True)
+        connection = data['version']['connection']
+        connection['credential_configured'] = bool(connection.pop('credential_ref', None))
+        return data
+
     def discover(payload: CapabilityDiscoverPayload, _: ActionExecutionContext) -> HandlerResult:
         query = payload.query.strip().lower() if payload.query else None
         descriptors = registry.descriptors()
@@ -395,6 +403,18 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             verdict='completed',
             data={'target': public_target_detail(detail)},
             next_action='target.list',
+        )
+
+    def list_target_versions(payload: TargetVersionListPayload, _: ActionExecutionContext) -> HandlerResult:
+        records, warnings = targets.list_runnable_versions(payload)
+        return HandlerResult(
+            verdict='completed',
+            data={
+                'versions': [public_target_version_candidate(record) for record in records],
+                'count': len(records),
+            },
+            next_action='target.get' if records else 'target.list',
+            warnings=tuple(warnings),
         )
 
     def create_target_version(
@@ -687,6 +707,23 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             ),
             TargetVersionCreatePayload,
             create_target_version,
+        ),
+        (
+            ActionDescriptor(
+                name='target.version.list',
+                version='1.0',
+                access='read',
+                description='列出真实试调通过的不可变对象版本；包含仍可运行的历史版本，不返回凭据引用。',
+                when_to_use='新建运行前选择需要精确锁定的正式对象版本时调用。',
+                prerequisites=['有效 project_id'],
+                next_action='target.get',
+                supports_dry_run=False,
+                requires_idempotency=False,
+                requires_confirmation=False,
+                input_schema=TargetVersionListPayload.model_json_schema(),
+            ),
+            TargetVersionListPayload,
+            list_target_versions,
         ),
     ]
     for descriptor, payload_model, handler in definitions:

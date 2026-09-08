@@ -78,6 +78,7 @@ jobs:
           tests/service/test_bootstrap.py
           tests/service/test_api_contracts.py
           tests/service/test_workbench_actions.py
+          tests/service/test_project_run_scope.py
           tests/report/test_report_endpoints.py
       - run: npm run lint
         working-directory: evalscope/web
