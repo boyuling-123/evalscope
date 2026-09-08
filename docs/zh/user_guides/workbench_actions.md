@@ -10,6 +10,9 @@
 | `project.list` | 只读 | 查询本地项目 |
 | `project.get` | 只读 | 按稳定 ID 读取项目 |
 | `project.create` | 写入 | 创建可迁移的 `project.json`；必须先 `dry_run` 确认 |
+| `dataset.list` | 只读 | 查询项目内数据集及当前不可变版本摘要 |
+| `dataset.get` | 只读 | 读取指定数据集版本，可选择不返回 Case 内容 |
+| `dataset.create` | 写入 | 将已确认的小批量导入包冻结为首个 `DatasetVersion`；不启动运行或评价 |
 | `target.list` | 只读 | 查询指定项目的评测对象，可按类型和状态过滤 |
 | `target.get` | 只读 | 读取指定对象及版本，不返回凭据引用内容 |
 | `target.version.list` | 只读 | 列出所有真实试调通过的不可变版本，可包含仍可运行的历史版本 |
@@ -17,7 +20,7 @@
 | `target.version.create` | 写入 | 基于当前最新版创建不可变后续版本；保留旧版本且不自动试调 |
 | `target.connection.check` | 写入／外部请求 | 预览后向指定版本发送一次真实试调，只保存脱敏结果 |
 
-尚未实现的数据集、评估器、Run 与 MCP Action 不会出现在发现结果中。新建 Target 固定保存为 `draft / untested`，只有 `target.connection.check` 的真实试调成功后才能进入正式候选池。
+尚未实现的流式数据导入、数据集编辑、评估器、Run 与 MCP Action 不会出现在发现结果中。新建 Target 固定保存为 `draft / untested`，只有 `target.connection.check` 的真实试调成功后才能进入正式候选池。
 
 ## HTTP 入口
 
@@ -48,6 +51,16 @@ evalscope service --outputs ./outputs --workspace ./my-workbench
 ```
 
 项目清单保存在 `projects/<project_id>/project.json`，项目运行产物保存在 `projects/<project_id>/runs/`。Action 审计保存在 `audit/events.jsonl`，幂等结果保存在 `.action-state/idempotency/`。这些文件使用开放 JSON／JSONL 格式；浏览器不保存大规模业务真值。
+
+小批量数据集导入使用以下开放文件结构：
+
+```text
+projects/<project_id>/datasets/<dataset_id>/dataset.json
+projects/<project_id>/datasets/<dataset_id>/versions/<dataset_version_id>.json
+projects/<project_id>/datasets/<dataset_id>/revisions/<case_revision_id>.json
+```
+
+`dataset.create` 只接受已经完成字段映射与用户确认的规范导入包，单次上限为 1000 条。`case_id` 表示跨编辑稳定的业务 Case，`revision_id` 与内容哈希绑定；`DatasetVersion` 冻结有序的 CaseRevision 集合和字段结构，不覆盖旧文件。缺失标准答案会按导入包中的显式 `null` 保留，不会被悄悄删除或触发 AI 补写。超过 1000 条、10 万条或包含大媒体的数据必须等待流式文件导入能力，禁止经 Action JSON 请求或浏览器内存硬塞。
 
 评测对象清单和版本分别保存在：
 

@@ -40,6 +40,9 @@ def test_discovery_only_exposes_registered_actions(tmp_path):
     names = {item['name'] for item in actions}
     assert names == {
         'capabilities.discover',
+        'dataset.create',
+        'dataset.get',
+        'dataset.list',
         'project.create',
         'project.get',
         'project.list',

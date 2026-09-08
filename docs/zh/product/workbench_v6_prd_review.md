@@ -25,14 +25,14 @@
 
 | 能力 | 当前状态 | 代码或验收证据 | 下一步 |
 | --- | --- | --- | --- |
-| 统一 Action Registry | 已验证 | `evalscope/workbench` 与 10 个 Action 契约测试 | 所有后续写操作复用 |
+| 统一 Action Registry | 已验证 | `evalscope/workbench` 与 13 个 Action 契约测试 | 所有后续写操作复用 |
 | 项目查询、预览与确认创建 | 已验证 | `project.list/get/create`；浏览器完成真实创建 | 增加归档与导入导出 |
 | 项目级路由与切换 | 已验证 | `/project/:projectId/*`；桌面与 390px 验收 | 后续对象页复用同一路由约束 |
 | 中文紧凑页面壳层 | 已验证 | 左侧导航、路径栏、唯一 H1、主动作 | 后续页面复用同一壳层 |
 | 项目级运行数据隔离 | 已验证 | 项目独立 `runs_path`；任务、进度、日志与报告按 `project_id` 解析 | Target、Dataset 与 Evaluator 延续相同边界 |
 | 质量评测与性能压测入口 | 部分实现 | 质量评测已锁定精确 TargetVersion；任务和报告页已绑定项目运行目录 | 收敛为统一 Run Spec 与运行详情 |
 | 评测对象 | 部分实现 | `target.list/get/create/version.list/version.create/connection.check`；项目级列表、历史候选版本、版本详情、并发保护、草稿接入与显式确认试调 | P0 补齐 DatasetVersion 与 EvaluatorVersion |
-| 数据集版本 | 未实现 | 仅有运行时数据集配置 | P0 新建不可变版本对象 |
+| 数据集版本 | 部分实现 | `dataset.list/get/create`；稳定 Case、不可变 CaseRevision、冻结 DatasetVersion 与字段角色预览 | P0 增加流式文件导入、版本编辑与前端页面 |
 | 评估器版本 | 未实现 | EvalScope Evaluator 可执行，但无产品生命周期 | P0 新建 Action 与页面 |
 | Trace 管理 | 部分实现 | EvalScope 有 Agent Trace 组件 | P1 建立外部 Trace 关联和列表 |
 | MCP 与评测助手 | 设计中 | Action 已提供共同能力面 | P1 在 Action 上增加适配器 |
@@ -90,6 +90,14 @@
 - 相同运行可以幂等复用原绑定，但不能替换成其他对象或版本；恢复运行自动继承已有绑定，避免续跑时漂移。
 - 本轮测试只使用进程内 Mock，不调用被测模型；覆盖历史候选版本、未试调拒绝、伪造连接字段覆盖、服务端凭据解析、绑定脱敏和改绑冲突。
 
+### DatasetVersion 核心基线
+
+- `dataset.create` 只接收已经确认输入字段、标准答案字段或无答案、评价模式和缺失策略的规范导入包；`dry_run` 只展示字段角色、条数和写入范围，不回显整批数据。
+- `case_id` 是跨编辑稳定身份；`revision_id` 与规范内容哈希绑定。每个版本冻结有序 CaseRevision 集合、字段结构哈希、来源和条数，不覆盖旧文件。
+- 显式空标准答案以 `null` 保存，保证“补空/保留空值”策略可追溯；导入不会自动补写答案、启动 Run 或启动 AI 评价。
+- 数据集 Action 与项目边界绑定，跨项目 ID 无法读取；损坏版本或 CaseRevision 返回结构化错误，不返回半份数据。
+- 当前写入上限为 1000 条且媒体只允许引用，明确服务于 Skill 确认后的轻量导入包。10 万条、20GB 与媒体原件后续使用流式文件和分片索引，不进入浏览器或 Action JSON。
+
 ## 已锁定的前端取舍
 
 - 未实现页面必须隐藏入口，不展示“即将上线”的空壳导航。
@@ -107,9 +115,10 @@
 4. 已完成：增加本地 Mock 连接验收、显式双阶段确认的真实试调 Action，以及脱敏试调结果。
 5. 已完成：建立后续不可变 TargetVersion、版本来源、并发冲突保护与受控版本创建界面。
 6. 已完成：让质量评测锁定精确 TargetVersion，并在对象详情、创建表单和运行目录展示锁定证据。
-7. 当前 Ready：建立不可变 DatasetVersion 与字段映射预览，复用既有导入 Skill 的确认规则。
-8. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
-9. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。
-10. 在稳定 Action 上增加 MCP 适配器和全局评测助手，最后再进入 Prompt／Skill 优化飞轮。
+7. 部分完成：建立不可变 DatasetVersion、稳定 CaseRevision 与字段角色预览，复用既有导入 Skill 的确认规则。
+8. 当前 Ready：增加 DatasetVersion 流式文件导入与项目级数据集页面；大数据仅保存索引和文件引用。
+9. 建立 EvaluatorVersion 与独立评分生命周期，保证更换 Judge 不重复调用 Target。
+10. 收敛为统一 Run Spec、运行详情、基线比较与 Bad Case 下钻。
+11. 在稳定 Action 上增加 MCP 适配器和全局评测助手，最后再进入 Prompt／Skill 优化飞轮。
 
 每一轮都必须经过真实源文件测试、异常路径、构建、桌面和窄屏浏览器验收、文档更新、密钥扫描后，才能提交和合并。
