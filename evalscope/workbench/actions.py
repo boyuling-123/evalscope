@@ -19,6 +19,12 @@ from .contracts import (
     ActionResult,
     WorkbenchModel,
 )
+from .datasets import (
+    DatasetCreatePayload,
+    DatasetGetPayload,
+    DatasetListPayload,
+    DatasetStore,
+)
 from .errors import WorkbenchActionError
 from .persistence import ActionStateStore
 from .projects import ProjectCreatePayload, ProjectGetPayload, ProjectListPayload, ProjectStore
@@ -248,7 +254,13 @@ def action_http_status(response: ActionResponse) -> int:
     if response.ok:
         return 200
     code = response.error.code if response.error else 'INTERNAL_ERROR'
-    if code in {'ACTION_NOT_FOUND', 'PROJECT_NOT_FOUND', 'TARGET_NOT_FOUND'}:
+    if code in {
+        'ACTION_NOT_FOUND',
+        'DATASET_NOT_FOUND',
+        'DATASET_VERSION_NOT_FOUND',
+        'PROJECT_NOT_FOUND',
+        'TARGET_NOT_FOUND',
+    }:
         return 404
     if code in {
         'IDEMPOTENCY_CONFLICT',
@@ -267,6 +279,7 @@ def action_http_status(response: ActionResponse) -> int:
 def create_default_registry(workspace_root: str) -> ActionRegistry:
     registry = ActionRegistry(workspace_root)
     projects = ProjectStore(workspace_root)
+    datasets = DatasetStore(workspace_root)
     targets = TargetStore(workspace_root)
 
     def public_target_detail(detail: TargetDetail) -> Dict[str, Any]:
@@ -348,6 +361,74 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             verdict='completed',
             data={'project': project.model_dump(mode='json', exclude_none=True)},
             next_action='project.list',
+        )
+
+    def create_dataset(payload: DatasetCreatePayload, context: ActionExecutionContext) -> HandlerResult:
+        if context.request.dry_run:
+            projects.get(payload.project_id)
+            fields_by_role = {
+                role: [field.name for field in payload.dataset_schema.fields if field.role == role]
+                for role in ('id', 'input', 'expected', 'attachment', 'label', 'metadata')
+            }
+            return HandlerResult(
+                verdict='ready',
+                data={
+                    'preview': {
+                        'project_id': payload.project_id,
+                        'name': payload.name,
+                        'type': payload.type,
+                        'version_label': payload.version_label,
+                        'row_count': len(payload.cases),
+                        'fields_by_role': fields_by_role,
+                        'source': payload.source,
+                        'has_expected_field': bool(fields_by_role['expected']),
+                        'missing_values_preserved': True,
+                        'writes': [
+                            'dataset.json',
+                            'versions/<dataset_version_id>.json',
+                            'revisions/<case_revision_id>.json',
+                        ],
+                        'starts_run': False,
+                        'starts_evaluation': False,
+                    }
+                },
+                next_action='dataset.create',
+                warnings=(
+                    '写入只保存已确认的小批量导入包，不启动模型运行或 AI 评价。',
+                    '超过 1000 条或包含大媒体时，请使用后续流式文件导入能力。',
+                ),
+            )
+        if context.operation_id is None:
+            raise WorkbenchActionError(
+                code='IDEMPOTENCY_KEY_REQUIRED',
+                message='创建数据集需要幂等键。',
+            )
+        detail = datasets.create(payload, context.operation_id)
+        return HandlerResult(
+            verdict='completed',
+            data={'dataset': detail.model_dump(mode='json', by_alias=True)},
+            next_action='dataset.get',
+            warnings=('数据集版本已冻结；本次写入未启动模型运行或 AI 评价。',),
+        )
+
+    def list_datasets(payload: DatasetListPayload, _: ActionExecutionContext) -> HandlerResult:
+        records, warnings = datasets.list(payload)
+        return HandlerResult(
+            verdict='completed',
+            data={
+                'datasets': [record.model_dump(mode='json', by_alias=True) for record in records],
+                'count': len(records),
+            },
+            next_action='dataset.create' if not records else 'dataset.get',
+            warnings=tuple(warnings),
+        )
+
+    def get_dataset(payload: DatasetGetPayload, _: ActionExecutionContext) -> HandlerResult:
+        detail = datasets.get(payload)
+        return HandlerResult(
+            verdict='completed',
+            data={'dataset': detail.model_dump(mode='json', by_alias=True)},
+            next_action='dataset.list',
         )
 
     def create_target(payload: TargetCreatePayload, context: ActionExecutionContext) -> HandlerResult:
@@ -622,6 +703,63 @@ def create_default_registry(workspace_root: str) -> ActionRegistry:
             ),
             ProjectListPayload,
             list_projects,
+        ),
+        (
+            ActionDescriptor(
+                name='dataset.create',
+                version='1.0',
+                access='write',
+                description='将已确认的小批量导入包保存为不可变 DatasetVersion；不会启动运行或评价。',
+                when_to_use='字段映射、标准答案字段、评价模式和缺失值策略均已由用户确认后调用。',
+                prerequisites=[
+                    '有效 project_id',
+                    '已确认 input 字段',
+                    '已确认 expected 字段或明确无标准答案',
+                    '已确认评价模式与缺失值策略',
+                    '正式写入前完成 dry_run 确认',
+                ],
+                next_action='dataset.get',
+                supports_dry_run=True,
+                requires_idempotency=True,
+                requires_confirmation=True,
+                input_schema=DatasetCreatePayload.model_json_schema(),
+            ),
+            DatasetCreatePayload,
+            create_dataset,
+        ),
+        (
+            ActionDescriptor(
+                name='dataset.get',
+                version='1.0',
+                access='read',
+                description='读取数据集、指定不可变版本及其 CaseRevision；可只读元数据。',
+                when_to_use='查看数据集详情、核对版本或准备创建运行前调用。',
+                prerequisites=['有效 project_id', '有效 dataset_id'],
+                next_action='dataset.list',
+                supports_dry_run=False,
+                requires_idempotency=False,
+                requires_confirmation=False,
+                input_schema=DatasetGetPayload.model_json_schema(),
+            ),
+            DatasetGetPayload,
+            get_dataset,
+        ),
+        (
+            ActionDescriptor(
+                name='dataset.list',
+                version='1.0',
+                access='read',
+                description='列出项目内数据集及其当前不可变版本摘要，可按数据集类型筛选。',
+                when_to_use='进入数据集列表、选择运行输入或检查本地数据资产时调用。',
+                prerequisites=['有效 project_id'],
+                next_action='dataset.get',
+                supports_dry_run=False,
+                requires_idempotency=False,
+                requires_confirmation=False,
+                input_schema=DatasetListPayload.model_json_schema(),
+            ),
+            DatasetListPayload,
+            list_datasets,
         ),
         (
             ActionDescriptor(
